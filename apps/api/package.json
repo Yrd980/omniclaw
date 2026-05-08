@@ -1,0 +1,13 @@
+{
+  "name": "@omniclaw/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@omniclaw/db": "workspace:*",
+    "hono": "^4.10.6"
+  }
+}

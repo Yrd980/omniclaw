@@ -1,0 +1,9 @@
+[project]
+name = "omniclaw-agent-runtime"
+version = "0.1.0"
+description = "Phase 1 placeholder for future LangGraph/LangChain/E2B runtime integration."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
