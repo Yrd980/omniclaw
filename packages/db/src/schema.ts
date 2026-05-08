@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -6,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { vector } from "drizzle-orm/pg-core/columns/vector_extension/vector";
 
@@ -80,6 +82,7 @@ export const skills = pgTable(
   },
   (table) => ({
     agentIdIdx: index("skills_agent_id_idx").on(table.agentId),
+    agentNameUniqueIdx: uniqueIndex("skills_agent_name_unique").on(table.agentId, table.name),
     nameIdx: index("skills_name_idx").on(table.name),
     basePriceIdx: index("skills_base_price_lamports_idx").on(table.basePriceLamports),
     latencyIdx: index("skills_estimated_latency_ms_idx").on(table.estimatedLatencyMs),
@@ -90,7 +93,7 @@ export const tasks = pgTable(
   "tasks",
   {
     id: text("id").primaryKey(),
-    parentTaskId: text("parent_task_id"),
+    parentTaskId: text("parent_task_id").references((): AnyPgColumn => tasks.id),
     hirerAgentId: text("hirer_agent_id").notNull().references(() => agents.id),
     workerAgentId: text("worker_agent_id").notNull().references(() => agents.id),
     skillId: text("skill_id").notNull().references(() => skills.id),
@@ -168,6 +171,7 @@ export const settlementEvents = pgTable(
     fromWallet: text("from_wallet"),
     toWallet: text("to_wallet"),
     txSignature: text("tx_signature").notNull(),
+    failureReason: text("failure_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

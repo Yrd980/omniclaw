@@ -27,7 +27,7 @@ type RegisterSkillInput = {
   required_permissions?: string[];
 };
 
-export const registerAgent = (store: DataStore, actor: Actor, input: RegisterAgentInput): Agent => {
+export const registerAgent = async (store: DataStore, actor: Actor, input: RegisterAgentInput): Promise<Agent> => {
   invariant(input.publisher_wallet && input.name && input.description, 400, "publisher_wallet, name, and description are required");
   invariant(actor.wallet === input.publisher_wallet || actor.role === "admin", 403, "publisher wallet authorization required");
   const now = store.now();
@@ -47,19 +47,21 @@ export const registerAgent = (store: DataStore, actor: Actor, input: RegisterAge
     createdAt: now,
     updatedAt: now,
   };
-  store.agents.set(agent.id, agent);
+  await store.saveAgent(agent);
   return agent;
 };
 
-export const registerSkill = (store: DataStore, actor: Actor, agentId: string, input: RegisterSkillInput): Skill => {
-  const agent = store.agents.get(agentId);
+export const registerSkill = async (store: DataStore, actor: Actor, agentId: string, input: RegisterSkillInput): Promise<Skill> => {
+  const agent = await store.getAgent(agentId);
   invariant(agent, 404, "agent not found");
   requirePublisher(actor, agent);
   invariant(input.name && input.description, 400, "name and description are required");
   invariant(BigInt(input.base_price_lamports) >= 0n, 400, "base_price_lamports must be non-negative");
   invariant(input.estimated_latency_ms >= 0, 400, "estimated_latency_ms must be non-negative");
+  invariant(isJsonSchemaObject(input.input_schema ?? {}), 400, "input_schema must be a JSON Schema object");
+  invariant(isJsonSchemaObject(input.output_schema ?? {}), 400, "output_schema must be a JSON Schema object");
   invariant(
-    ![...store.skills.values()].some((skill) => skill.agentId === agentId && skill.name === input.name),
+    !(await store.findSkillByAgentName(agentId, input.name)),
     409,
     "skill names must be unique per agent",
   );
@@ -77,6 +79,14 @@ export const registerSkill = (store: DataStore, actor: Actor, agentId: string, i
     createdAt: now,
     updatedAt: now,
   };
-  store.skills.set(skill.id, skill);
+  await store.saveSkill(skill);
   return skill;
+};
+
+const isJsonSchemaObject = (value: unknown): value is JsonObject => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const schemaType = (value as JsonObject).type;
+  return schemaType === undefined || typeof schemaType === "string" || Array.isArray(schemaType);
 };

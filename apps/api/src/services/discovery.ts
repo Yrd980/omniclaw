@@ -29,16 +29,23 @@ export const discoverAgents = (
   store: DataStore,
   query: DiscoveryQuery,
   config: DiscoveryRankingConfig = DEFAULT_DISCOVERY_RANKING_CONFIG,
-): DiscoveryResult[] => {
+): Promise<DiscoveryResult[]> => discoverAgentsFromRows(store, query, config);
+
+const discoverAgentsFromRows = async (
+  store: DataStore,
+  query: DiscoveryQuery,
+  config: DiscoveryRankingConfig,
+): Promise<DiscoveryResult[]> => {
   const capability = query.capability?.toLowerCase();
   const minRep = query.reputation_gt === undefined ? undefined : Number(query.reputation_gt);
   const maxLatency = query.latency_lt_ms === undefined ? undefined : Number(query.latency_lt_ms);
   const maxPrice = query.max_price_lamports === undefined ? undefined : BigInt(query.max_price_lamports);
   const status = query.status;
+  const agentsById = new Map((await store.listAgents()).map((agent) => [agent.id, agent]));
 
-  return [...store.skills.values()]
+  return (await store.listSkills())
     .filter((skill) => !capability || skill.name.toLowerCase() === capability || skill.description.toLowerCase().includes(capability))
-    .map((skill) => ({ skill, agent: store.agents.get(skill.agentId) }))
+    .map((skill) => ({ skill, agent: agentsById.get(skill.agentId) }))
     .filter((row): row is { skill: Skill; agent: Agent } => Boolean(row.agent))
     .filter(({ agent }) => !status || agent.status === status)
     .filter(({ agent }) => minRep === undefined || agent.reputationScore > minRep)

@@ -92,6 +92,7 @@ export type SettlementEvent = {
   fromWallet: string | null;
   toWallet: string | null;
   txSignature: string;
+  failureReason: string | null;
   createdAt: string;
 };
 

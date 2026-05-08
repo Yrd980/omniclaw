@@ -16,9 +16,15 @@ export interface SettlementAdapter {
   lockEscrow(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<EscrowLock>;
   releasePayout(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<SettlementOutcome>;
   refund(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<SettlementOutcome>;
+  recordFailure(task: Task, reason: string): Promise<SettlementOutcome>;
 }
 
 export class MockSettlementAdapter implements SettlementAdapter {
+  private readonly lockedTaskIds = new Set<string>();
+  private readonly paidTaskIds = new Set<string>();
+  private readonly refundedTaskIds = new Set<string>();
+  private readonly failedTaskReasons = new Map<string, string>();
+
   constructor(
     private readonly config: SettlementConfig = DEFAULT_SETTLEMENT_CONFIG,
     private readonly now: () => string = () => new Date().toISOString(),
@@ -27,6 +33,10 @@ export class MockSettlementAdapter implements SettlementAdapter {
   async lockEscrow(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<EscrowLock> {
     const txSignature = `${this.config.lockTxPrefix}_${task.id}`;
     const escrowAccount = `${this.config.escrowAccountPrefix}_${task.id}`;
+    if (this.lockedTaskIds.has(task.id)) {
+      return { escrowAccount, txSignature, events: [] };
+    }
+    this.lockedTaskIds.add(task.id);
     return {
       escrowAccount,
       txSignature,
@@ -38,6 +48,10 @@ export class MockSettlementAdapter implements SettlementAdapter {
 
   async releasePayout(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<SettlementOutcome> {
     const txSignature = `${this.config.payoutTxPrefix}_${task.id}`;
+    if (this.paidTaskIds.has(task.id)) {
+      return { txSignature, events: [] };
+    }
+    this.paidTaskIds.add(task.id);
     const events: SettlementEvent[] = [
       this.event(task.id, "worker_paid", task.workerPayoutLamports, task.escrowAccount, wallets.workerWallet, txSignature),
     ];
@@ -52,10 +66,28 @@ export class MockSettlementAdapter implements SettlementAdapter {
 
   async refund(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<SettlementOutcome> {
     const txSignature = `${this.config.refundTxPrefix}_${task.id}`;
+    if (this.refundedTaskIds.has(task.id)) {
+      return { txSignature, events: [] };
+    }
+    this.refundedTaskIds.add(task.id);
     return {
       txSignature,
       events: [
         this.event(task.id, "hirer_refunded", task.paymentLamports, task.escrowAccount, wallets.hirerWallet, txSignature),
+      ],
+    };
+  }
+
+  async recordFailure(task: Task, reason: string): Promise<SettlementOutcome> {
+    const txSignature = `mock_settlement_failed_${task.id}`;
+    if (this.failedTaskReasons.has(task.id)) {
+      return { txSignature, events: [] };
+    }
+    this.failedTaskReasons.set(task.id, reason);
+    return {
+      txSignature,
+      events: [
+        this.event(task.id, "settlement_failed", "0", task.escrowAccount, null, txSignature, reason),
       ],
     };
   }
@@ -67,6 +99,7 @@ export class MockSettlementAdapter implements SettlementAdapter {
     fromWallet: string | null,
     toWallet: string | null,
     txSignature: string,
+    failureReason: string | null = null,
   ): SettlementEvent {
     return {
       id: `set_${eventType}_${taskId}_${amountLamports}`,
@@ -76,6 +109,7 @@ export class MockSettlementAdapter implements SettlementAdapter {
       fromWallet,
       toWallet,
       txSignature,
+      failureReason,
       createdAt: this.now(),
     };
   }

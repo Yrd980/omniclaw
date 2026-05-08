@@ -52,10 +52,10 @@ export type SettlementConfig = {
 };
 
 export const DEFAULT_SETTLEMENT_CONFIG: SettlementConfig = {
-  escrowAccountPrefix: "mock_escrow",
-  lockTxPrefix: "mock_lock",
-  payoutTxPrefix: "mock_payout",
-  refundTxPrefix: "mock_refund",
-  protocolFeeWallet: "protocol_fee_wallet",
-  runtimeFeeWallet: "runtime_fee_wallet",
+  escrowAccountPrefix: process.env.SETTLEMENT_ESCROW_ACCOUNT_PREFIX ?? "mock_escrow",
+  lockTxPrefix: process.env.SETTLEMENT_LOCK_TX_PREFIX ?? "mock_lock",
+  payoutTxPrefix: process.env.SETTLEMENT_PAYOUT_TX_PREFIX ?? "mock_payout",
+  refundTxPrefix: process.env.SETTLEMENT_REFUND_TX_PREFIX ?? "mock_refund",
+  protocolFeeWallet: process.env.SETTLEMENT_PROTOCOL_FEE_WALLET ?? "protocol_fee_wallet",
+  runtimeFeeWallet: process.env.SETTLEMENT_RUNTIME_FEE_WALLET ?? "runtime_fee_wallet",
 };

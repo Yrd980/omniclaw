@@ -39,16 +39,16 @@ export type CreateTaskInput = {
 
 export const createTask = async ({ store, settlement, feeConfig }: TaskServiceDeps, actor: Actor, input: CreateTaskInput): Promise<Task> => {
   invariant(actor.agentId === input.hirer_agent_id || actor.role === "admin", 403, "hirer authorization required");
-  const hirer = store.agents.get(input.hirer_agent_id);
-  const worker = store.agents.get(input.worker_agent_id);
-  const skill = store.skills.get(input.skill_id);
+  const hirer = await store.getAgent(input.hirer_agent_id);
+  const worker = await store.getAgent(input.worker_agent_id);
+  const skill = await store.getSkill(input.skill_id);
   invariant(hirer, 404, "hirer agent not found");
   invariant(worker, 404, "worker agent not found");
   invariant(skill, 404, "skill not found");
   invariant(skill.agentId === worker.id, 400, "skill does not belong to worker");
   invariant(toTime(input.deadline) > toTime(store.now()), 400, "deadline must be in the future");
   if (input.parent_task_id) {
-    validateParent(store, input.parent_task_id, input.deadline);
+    await validateParent(store, input.parent_task_id, input.deadline);
   }
 
   const fees = calculateFees(input.payment_lamports, feeConfig);
@@ -72,51 +72,73 @@ export const createTask = async ({ store, settlement, feeConfig }: TaskServiceDe
     createdAt: now,
     updatedAt: now,
   };
-  store.tasks.set(task.id, task);
+  await store.saveTask(task);
 
   const lock = await settlement.lockEscrow(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet });
   applyTransition(task, "escrow_locked");
   task.escrowAccount = lock.escrowAccount;
   task.escrowTxSignature = lock.txSignature;
   task.updatedAt = store.now();
-  storeSettlementEvents(store, lock.events);
+  await store.saveTask(task);
+  await storeSettlementEvents(store, lock.events);
   return task;
 };
 
 export const acceptTask = async ({ store, runtime }: TaskServiceDeps, actor: Actor, taskId: string): Promise<Task> => {
-  const task = mustTask(store, taskId);
+  const task = await mustTask(store, taskId);
   requireWorker(actor, task);
   applyTransition(task, "accepted");
   task.acceptedAt = store.now();
   task.updatedAt = task.acceptedAt;
-  const dispatch = await runtime.dispatch(task);
+  await store.saveTask(task);
+  let dispatch;
+  try {
+    dispatch = await runtime.dispatch(task);
+  } catch (error) {
+    await failAcceptedTask(store, task);
+    throw error;
+  }
   if (dispatch.accepted) {
     applyTransition(task, "in_progress");
     task.updatedAt = store.now();
+    await store.saveTask(task);
+  } else {
+    await failAcceptedTask(store, task);
   }
   return task;
 };
 
 export const rejectTask = async ({ store, settlement }: TaskServiceDeps, actor: Actor, taskId: string): Promise<Task> => {
-  const task = mustTask(store, taskId);
+  const task = await mustTask(store, taskId);
   requireWorker(actor, task);
   invariant(task.status === "escrow_locked", 409, "only escrow_locked tasks can be rejected");
-  const hirer = store.agents.get(task.hirerAgentId);
-  const worker = store.agents.get(task.workerAgentId);
+  const hirer = await store.getAgent(task.hirerAgentId);
+  const worker = await store.getAgent(task.workerAgentId);
   invariant(hirer && worker, 404, "task agents not found");
   const refund = await settlement.refund(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet });
   applyTransition(task, "cancelled");
   task.settlementTxSignature = refund.txSignature;
   task.updatedAt = store.now();
-  storeSettlementEvents(store, refund.events);
+  await store.saveTask(task);
+  await storeSettlementEvents(store, refund.events);
   return task;
 };
 
-export const submitResult = ({ store }: TaskServiceDeps, actor: Actor, taskId: string, input: { result_payload?: JsonObject; artifacts?: unknown[] }): TaskResult => {
-  const task = mustTask(store, taskId);
+export const submitResult = async (
+  { store }: TaskServiceDeps,
+  actor: Actor,
+  taskId: string,
+  input: { result_payload?: JsonObject; artifacts?: unknown[] },
+): Promise<TaskResult> => {
+  const task = await mustTask(store, taskId);
   requireWorker(actor, task);
   invariant(task.status === "in_progress", 409, "result can only be submitted for in_progress tasks");
   invariant(typeof input.result_payload === "object" && input.result_payload !== null, 400, "result_payload is required");
+  invariant(!Array.isArray(input.result_payload), 400, "result_payload must be a JSON object");
+  invariant(input.artifacts === undefined || Array.isArray(input.artifacts), 400, "artifacts must be an array");
+  const skill = await store.getSkill(task.skillId);
+  invariant(skill, 404, "task skill not found");
+  validateJsonSchema(input.result_payload, skill.outputSchema);
   const result: TaskResult = {
     id: store.nextId("result"),
     taskId,
@@ -126,10 +148,11 @@ export const submitResult = ({ store }: TaskServiceDeps, actor: Actor, taskId: s
     qualityScore: null,
     submittedAt: store.now(),
   };
-  store.taskResults.set(result.id, result);
+  await store.saveTaskResult(result);
   applyTransition(task, "submitted");
   task.submittedAt = result.submittedAt;
   task.updatedAt = result.submittedAt;
+  await store.saveTask(task);
   return result;
 };
 
@@ -139,37 +162,70 @@ export const resolveTask = async (
   taskId: string,
   input: { resolution: "completed" | "failed" | "disputed"; quality_score?: number; review_score?: number },
 ): Promise<Task> => {
-  const task = mustTask(store, taskId);
+  const task = await mustTask(store, taskId);
   requireHirerOrEvaluator(actor, task);
   invariant(task.status === "submitted" || task.status === "disputed", 409, "task must be submitted or disputed before resolution");
-  const hirer = store.agents.get(task.hirerAgentId);
-  const worker = store.agents.get(task.workerAgentId);
+  const hirer = await store.getAgent(task.hirerAgentId);
+  const worker = await store.getAgent(task.workerAgentId);
   invariant(hirer && worker, 404, "task agents not found");
 
   if (input.resolution === "completed") {
-    const payout = await settlement.releasePayout(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet });
+    const payout = await withSettlementFailureAudit(store, settlement, task, "release payout failed", () =>
+      settlement.releasePayout(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet })
+    );
     task.settlementTxSignature = payout.txSignature;
-    storeSettlementEvents(store, payout.events);
+    await storeSettlementEvents(store, payout.events);
     task.completedAt = store.now();
-    createReputationEvents(store, task, true, input.quality_score ?? null, input.review_score ?? null);
+    await createReputationEvents(store, task, true, input.quality_score ?? null, input.review_score ?? null);
   } else if (input.resolution === "failed") {
-    const refund = await settlement.refund(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet });
+    const refund = await withSettlementFailureAudit(store, settlement, task, "refund failed", () =>
+      settlement.refund(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet })
+    );
     task.settlementTxSignature = refund.txSignature;
-    storeSettlementEvents(store, refund.events);
-    createReputationEvents(store, task, false, input.quality_score ?? null, input.review_score ?? null);
+    await storeSettlementEvents(store, refund.events);
+    await createReputationEvents(store, task, false, input.quality_score ?? null, input.review_score ?? null);
   }
   applyTransition(task, input.resolution);
   task.updatedAt = store.now();
+  await store.saveTask(task);
   return task;
 };
 
-export const getTaskGraph = (store: DataStore, taskId: string) => {
-  const root = findRoot(store, mustTask(store, taskId));
+export const expireTask = async ({ store, settlement }: TaskServiceDeps, actor: Actor, taskId: string): Promise<Task> => {
+  invariant(actor.role === "admin" || actor.role === "evaluator", 403, "admin or evaluator authorization required");
+  const task = await mustTask(store, taskId);
+  invariant(toTime(task.deadline) <= toTime(store.now()), 409, "task deadline has not passed");
+  const hirer = await store.getAgent(task.hirerAgentId);
+  const worker = await store.getAgent(task.workerAgentId);
+  invariant(hirer && worker, 404, "task agents not found");
+
+  if (task.status === "submitted") {
+    applyTransition(task, "disputed");
+    task.updatedAt = store.now();
+    await store.saveTask(task);
+    return task;
+  }
+
+  invariant(["escrow_locked", "accepted", "in_progress"].includes(task.status), 409, "task cannot be expired from current status");
+  const refund = await withSettlementFailureAudit(store, settlement, task, "expiration refund failed", () =>
+    settlement.refund(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet })
+  );
+  applyTransition(task, "expired");
+  task.settlementTxSignature = refund.txSignature;
+  task.updatedAt = store.now();
+  await store.saveTask(task);
+  await storeSettlementEvents(store, refund.events);
+  return task;
+};
+
+export const getTaskGraph = async (store: DataStore, taskId: string) => {
+  const root = await findRoot(store, await mustTask(store, taskId));
   const nodes: Task[] = [];
   const edges: { from: string; to: string }[] = [];
+  const allTasks = await store.listTasks();
   const visit = (task: Task) => {
     nodes.push(task);
-    for (const child of [...store.tasks.values()].filter((candidate) => candidate.parentTaskId === task.id)) {
+    for (const child of allTasks.filter((candidate) => candidate.parentTaskId === task.id)) {
       edges.push({ from: task.id, to: child.id });
       visit(child);
     }
@@ -190,8 +246,8 @@ export const getTaskGraph = (store: DataStore, taskId: string) => {
   };
 };
 
-const mustTask = (store: DataStore, taskId: string): Task => {
-  const task = store.tasks.get(taskId);
+const mustTask = async (store: DataStore, taskId: string): Promise<Task> => {
+  const task = await store.getTask(taskId);
   invariant(task, 404, "task not found");
   return task;
 };
@@ -201,8 +257,8 @@ const applyTransition = (task: Task, nextStatus: TaskStatus) => {
   task.status = nextStatus;
 };
 
-const validateParent = (store: DataStore, parentTaskId: string, childDeadline: string) => {
-  const parent = mustTask(store, parentTaskId);
+const validateParent = async (store: DataStore, parentTaskId: string, childDeadline: string) => {
+  const parent = await mustTask(store, parentTaskId);
   invariant(parent.id !== parentTaskId || Boolean(parent), 400, "child task cannot use itself as parent");
   invariant(new Date(childDeadline).getTime() <= new Date(parent.deadline).getTime(), 400, "child deadline cannot exceed parent deadline");
   let current: Task | undefined = parent;
@@ -210,28 +266,55 @@ const validateParent = (store: DataStore, parentTaskId: string, childDeadline: s
   while (current) {
     invariant(!seen.has(current.id), 400, "parent task cycle detected");
     seen.add(current.id);
-    current = current.parentTaskId ? store.tasks.get(current.parentTaskId) : undefined;
+    current = current.parentTaskId ? await store.getTask(current.parentTaskId) : undefined;
   }
 };
 
-const findRoot = (store: DataStore, task: Task): Task => {
+const findRoot = async (store: DataStore, task: Task): Promise<Task> => {
   let current = task;
   const seen = new Set<string>();
   while (current.parentTaskId) {
     invariant(!seen.has(current.id), 400, "task graph cycle detected");
     seen.add(current.id);
-    current = mustTask(store, current.parentTaskId);
+    current = await mustTask(store, current.parentTaskId);
   }
   return current;
 };
 
-const storeSettlementEvents = (store: DataStore, events: SettlementEvent[]) => {
+const storeSettlementEvents = async (store: DataStore, events: SettlementEvent[]) => {
   for (const settlementEvent of events) {
-    store.settlementEvents.set(`${settlementEvent.id}_${store.settlementEvents.size}`, settlementEvent);
+    if (!(await store.hasSettlementEvent(settlementEvent.taskId, settlementEvent.eventType))) {
+      await store.saveSettlementEvent(settlementEvent);
+    }
   }
 };
 
-const createReputationEvents = (
+const withSettlementFailureAudit = async <T extends { txSignature: string; events: SettlementEvent[] }>(
+  store: DataStore,
+  settlement: SettlementAdapter,
+  task: Task,
+  operation: string,
+  action: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await action();
+  } catch (error) {
+    const reason = `${operation}: ${errorMessage(error)}`;
+    const failure = await settlement.recordFailure(task, reason);
+    await storeSettlementEvents(store, failure.events);
+    throw error;
+  }
+};
+
+const failAcceptedTask = async (store: DataStore, task: Task) => {
+  if (task.status === "accepted") {
+    applyTransition(task, "failed");
+    task.updatedAt = store.now();
+    await store.saveTask(task);
+  }
+};
+
+const createReputationEvents = async (
   store: DataStore,
   task: Task,
   success: boolean,
@@ -249,13 +332,54 @@ const createReputationEvents = (
     latencyMs: Math.max(0, completedAt - acceptedAt),
     qualityScore,
     reviewScore,
-    delegationSuccess: [...store.tasks.values()].some((candidate) => candidate.parentTaskId === task.id && candidate.status === "completed"),
+    delegationSuccess: (await store.listTasks()).some((candidate) => candidate.parentTaskId === task.id && candidate.status === "completed"),
     reputationDelta,
     reason: success ? "task completed" : "task failed",
     createdAt: store.now(),
   };
-  store.reputationEvents.set(event.id, event);
+  await store.saveReputationEvent(event);
 };
+
+const validateJsonSchema = (payload: JsonObject, schema: JsonObject) => {
+  const schemaType = schema.type;
+  if (schemaType !== undefined) {
+    const allowedTypes = Array.isArray(schemaType) ? schemaType : [schemaType];
+    invariant(allowedTypes.includes("object"), 400, "result_payload must match skill output_schema type");
+  }
+
+  const required = schema.required;
+  if (required !== undefined) {
+    invariant(Array.isArray(required) && required.every((field) => typeof field === "string"), 400, "skill output_schema required must be a string array");
+    for (const field of required) {
+      invariant(Object.hasOwn(payload, field), 400, `result_payload missing required field ${field}`);
+    }
+  }
+
+  const properties = schema.properties;
+  if (properties !== undefined) {
+    invariant(typeof properties === "object" && properties !== null && !Array.isArray(properties), 400, "skill output_schema properties must be an object");
+    for (const [field, propertySchema] of Object.entries(properties as Record<string, JsonObject>)) {
+      if (Object.hasOwn(payload, field) && typeof propertySchema === "object" && propertySchema !== null) {
+        const expectedType = propertySchema.type;
+        if (typeof expectedType === "string") {
+          invariant(jsonType(payload[field]) === expectedType, 400, `result_payload field ${field} must be ${expectedType}`);
+        }
+      }
+    }
+  }
+};
+
+const jsonType = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  if (value === null) {
+    return "null";
+  }
+  return typeof value;
+};
+
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 const toTime = (value: string): number => {
   const time = new Date(value).getTime();

@@ -1,13 +1,15 @@
+import { createDatabaseConnection } from "@omniclaw/db";
 import { Hono } from "hono";
 import { MockRuntimeAdapter } from "./adapters/runtime";
 import { MockSettlementAdapter } from "./adapters/settlement";
 import { DEFAULT_DISCOVERY_RANKING_CONFIG, type DiscoveryRankingConfig } from "./config";
 import { ApiError } from "./errors";
+import { createPostgresStore } from "./postgres-store";
 import { createMemoryStore, type DataStore } from "./store";
 import { registerAgent, registerSkill } from "./services/agents";
 import { actorFromHeaders } from "./services/authorization";
 import { discoverAgents } from "./services/discovery";
-import { acceptTask, createTask, getTaskGraph, rejectTask, resolveTask, submitResult, type TaskServiceDeps } from "./services/tasks";
+import { acceptTask, createTask, expireTask, getTaskGraph, rejectTask, resolveTask, submitResult, type TaskServiceDeps } from "./services/tasks";
 
 export type AppEnv = {
   store: DataStore;
@@ -16,7 +18,7 @@ export type AppEnv = {
 };
 
 export const createApp = (env: Partial<AppEnv> = {}) => {
-  const store = env.store ?? createMemoryStore();
+  const store = env.store ?? createStoreFromEnv();
   const taskDeps = env.taskDeps ?? {
     store,
     settlement: new MockSettlementAdapter(undefined, store.now),
@@ -35,25 +37,27 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.post("/agents", async (c) => {
-    const agent = registerAgent(store, actorFromHeaders(c.req.raw.headers), await c.req.json());
+    const agent = await registerAgent(store, actorFromHeaders(c.req.raw.headers), await c.req.json());
     return c.json(agent, 201);
   });
 
-  app.get("/agents/discover", (c) => c.json({ results: discoverAgents(store, Object.fromEntries(new URL(c.req.url).searchParams), discoveryRanking) }));
+  app.get("/agents/discover", async (c) =>
+    c.json({ results: await discoverAgents(store, Object.fromEntries(new URL(c.req.url).searchParams), discoveryRanking) })
+  );
 
-  app.get("/agents/:agentId", (c) => {
-    const agent = store.agents.get(c.req.param("agentId"));
+  app.get("/agents/:agentId", async (c) => {
+    const agent = await store.getAgent(c.req.param("agentId"));
     return agent ? c.json(agent) : c.json({ error: "agent not found" }, 404);
   });
 
   app.post("/agents/:agentId/skills", async (c) => {
-    const skill = registerSkill(store, actorFromHeaders(c.req.raw.headers), c.req.param("agentId"), await c.req.json());
+    const skill = await registerSkill(store, actorFromHeaders(c.req.raw.headers), c.req.param("agentId"), await c.req.json());
     return c.json(skill, 201);
   });
 
-  app.get("/agents/:agentId/skills", (c) => {
+  app.get("/agents/:agentId/skills", async (c) => {
     const agentId = c.req.param("agentId");
-    return c.json({ skills: [...store.skills.values()].filter((skill) => skill.agentId === agentId) });
+    return c.json({ skills: (await store.listSkills()).filter((skill) => skill.agentId === agentId) });
   });
 
   app.post("/tasks", async (c) => {
@@ -61,22 +65,30 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     return c.json(task, 201);
   });
 
-  app.get("/tasks/:taskId", (c) => {
-    const task = store.tasks.get(c.req.param("taskId"));
+  app.get("/tasks/:taskId", async (c) => {
+    const task = await store.getTask(c.req.param("taskId"));
     return task ? c.json(task) : c.json({ error: "task not found" }, 404);
   });
 
   app.post("/tasks/:taskId/accept", async (c) => c.json(await acceptTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"))));
   app.post("/tasks/:taskId/reject", async (c) => c.json(await rejectTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"))));
+  app.post("/tasks/:taskId/expire", async (c) => c.json(await expireTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"))));
 
   app.post("/tasks/:taskId/result", async (c) => {
-    const result = submitResult(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), await c.req.json());
+    const result = await submitResult(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), await c.req.json());
     return c.json(result, 201);
   });
 
   app.post("/tasks/:taskId/resolve", async (c) => c.json(await resolveTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), await c.req.json())));
 
-  app.get("/tasks/:taskId/graph", (c) => c.json(getTaskGraph(store, c.req.param("taskId"))));
+  app.get("/tasks/:taskId/graph", async (c) => c.json(await getTaskGraph(store, c.req.param("taskId"))));
 
   return { app, store, taskDeps };
+};
+
+const createStoreFromEnv = () => {
+  if (process.env.OMNICLAW_STORE === "postgres") {
+    return createPostgresStore(createDatabaseConnection().db);
+  }
+  return createMemoryStore();
 };
