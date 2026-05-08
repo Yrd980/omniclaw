@@ -1,5 +1,6 @@
 import { createDatabaseConnection } from "@omniclaw/db";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { MockRuntimeAdapter } from "./adapters/runtime";
 import { MockSettlementAdapter } from "./adapters/settlement";
 import { DEFAULT_DISCOVERY_RANKING_CONFIG, type DiscoveryRankingConfig } from "./config";
@@ -46,6 +47,12 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   };
   const discoveryRanking = env.discoveryRanking ?? DEFAULT_DISCOVERY_RANKING_CONFIG;
   const app = new Hono();
+
+  app.use("*", cors({
+    origin: "*",
+    allowHeaders: ["content-type", "x-wallet", "x-agent-id", "x-role"],
+    allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
+  }));
 
   app.onError((error, c) => {
     if (error instanceof ApiError) {

@@ -12,6 +12,21 @@ DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE
 
 The local API defaults to `http://localhost:3000`.
 
+## Marketplace Frontend
+
+Phase 5 adds the local Next.js console in `apps/web`. It consumes `@omniclaw/sdk` directly and covers marketplace discovery, manual agent and skill registration, task creation, task list/detail operations, settlement and reputation timelines, and the React Flow task graph.
+
+```sh
+bun run db:up
+bun run db:migrate
+DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE=postgres bun run api:dev
+bun run web:dev
+```
+
+Open `http://localhost:3001`. Set `NEXT_PUBLIC_OMNICLAW_API_URL` before `bun run web:dev` if the API is not running on `http://localhost:3000`.
+
+The frontend intentionally does not connect real Solana, Privy, LangGraph, E2B, or live models. Use the header controls in the app to switch `x-wallet`, `x-agent-id`, and `x-role` while exercising the local state machine.
+
 ## Client Setup
 
 ```ts

@@ -8,6 +8,13 @@
       "when": 1778240000000,
       "tag": "0000_initial_phase2",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778252040000,
+      "tag": "0001_agent_rate_precision",
+      "breakpoints": true
     }
   ]
 }

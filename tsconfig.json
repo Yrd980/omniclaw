@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
@@ -12,11 +13,13 @@
       "@omniclaw/db": ["./packages/db/src/index.ts"],
       "@omniclaw/db/*": ["./packages/db/src/*"],
       "@omniclaw/sdk": ["./packages/sdk/src/index.ts"],
-      "@omniclaw/sdk/*": ["./packages/sdk/src/*"]
+      "@omniclaw/sdk/*": ["./packages/sdk/src/*"],
+      "@/*": ["./apps/web/src/*"]
     }
   },
   "include": [
     "apps/**/*.ts",
+    "apps/**/*.tsx",
     "packages/**/*.ts"
   ]
 }

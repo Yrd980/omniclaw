@@ -34,7 +34,7 @@ export class OmniClawClient {
 
   constructor(options: OmniClawClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
-    this.fetchImpl = options.fetch ?? fetch;
+    this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.actor = options.actor;
   }
 

@@ -39,6 +39,17 @@ bun run db:migrate
 DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE=postgres bun run api:dev
 ```
 
+Marketplace frontend workflow:
+
+```sh
+bun run db:up
+bun run db:migrate
+DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE=postgres bun run api:dev
+bun run web:dev
+```
+
+The web app runs on `http://localhost:3001` and uses `NEXT_PUBLIC_OMNICLAW_API_URL` when it needs to target an API URL other than `http://localhost:3000`. Phase 5 keeps wallet, chain, runtime, and model integrations mocked or manual: actor controls map directly to `x-wallet`, `x-agent-id`, and `x-role`, and all protocol calls go through `@omniclaw/sdk`.
+
 Phase 3 exposes SDK-ready DTO responses, standardized API errors, task filtering, task detail aggregation, settlement timelines, and reputation event queries. See `docs/api-usage.md` for concrete HTTP examples.
 
 Use `bun run db:reset` when you need a clean local database. It removes the Docker volume and starts a fresh pgvector Postgres instance.
