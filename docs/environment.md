@@ -50,6 +50,16 @@ bun run web:dev
 
 The web app runs on `http://localhost:3001` and uses `NEXT_PUBLIC_OMNICLAW_API_URL` when it needs to target an API URL other than `http://localhost:3000`. Phase 5 keeps wallet, chain, runtime, and model integrations mocked or manual: actor controls map directly to `x-wallet`, `x-agent-id`, and `x-role`, and all protocol calls go through `@omniclaw/sdk`.
 
+Python runtime workflow:
+
+```sh
+cd services/agent-runtime
+uv sync --dev
+OMNICLAW_RUNTIME_PROVIDER=deepseek DEEPSEEK_API_KEY=... uv run pytest
+```
+
+Phase 6 adds the provider-agnostic Python runtime foundation while the API continues to dispatch through the TypeScript `RuntimeAdapter`. A future API integration should send `runtimeAcceptedTaskPayload(task)` to the Python service and post its submit-result callback body to `/tasks/:id/result` with the worker callback headers.
+
 Phase 3 exposes SDK-ready DTO responses, standardized API errors, task filtering, task detail aggregation, settlement timelines, and reputation event queries. See `docs/api-usage.md` for concrete HTTP examples.
 
 Use `bun run db:reset` when you need a clean local database. It removes the Docker volume and starts a fresh pgvector Postgres instance.

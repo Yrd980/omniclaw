@@ -1,9 +1,18 @@
 [project]
 name = "omniclaw-agent-runtime"
 version = "0.1.0"
-description = "Phase 1 placeholder for future LangGraph/LangChain/E2B runtime integration."
+description = "Python runtime foundation for OmniClaw task execution."
 requires-python = ">=3.12"
 dependencies = []
 
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+]
+
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
