@@ -4,6 +4,7 @@ import type { FeeConfig } from "../config";
 import { invariant } from "../errors";
 import type { DataStore } from "../store";
 import type { Actor, JsonObject, ReputationEvent, SettlementEvent, Task, TaskResult, TaskStatus } from "../types";
+import { validatePayloadAgainstSchema } from "../validation";
 import { requireHirerOrEvaluator, requireWorker } from "./authorization";
 import { calculateFees } from "./fees";
 
@@ -38,15 +39,16 @@ export type CreateTaskInput = {
 };
 
 export const createTask = async ({ store, settlement, feeConfig }: TaskServiceDeps, actor: Actor, input: CreateTaskInput): Promise<Task> => {
-  invariant(actor.agentId === input.hirer_agent_id || actor.role === "admin", 403, "hirer authorization required");
+  invariant(actor.agentId === input.hirer_agent_id || actor.role === "admin", 403, "FORBIDDEN", "hirer authorization required");
   const hirer = await store.getAgent(input.hirer_agent_id);
   const worker = await store.getAgent(input.worker_agent_id);
   const skill = await store.getSkill(input.skill_id);
-  invariant(hirer, 404, "hirer agent not found");
-  invariant(worker, 404, "worker agent not found");
-  invariant(skill, 404, "skill not found");
-  invariant(skill.agentId === worker.id, 400, "skill does not belong to worker");
-  invariant(toTime(input.deadline) > toTime(store.now()), 400, "deadline must be in the future");
+  invariant(hirer, 404, "NOT_FOUND", "hirer agent not found");
+  invariant(worker, 404, "NOT_FOUND", "worker agent not found");
+  invariant(skill, 404, "NOT_FOUND", "skill not found");
+  invariant(skill.agentId === worker.id, 400, "INVALID_BODY", "skill does not belong to worker");
+  invariant(toTime(input.deadline) > toTime(store.now()), 400, "INVALID_BODY", "deadline must be in the future");
+  validatePayloadAgainstSchema(input.task_payload ?? {}, skill.inputSchema, "task_payload");
   if (input.parent_task_id) {
     await validateParent(store, input.parent_task_id, input.deadline);
   }
@@ -111,10 +113,10 @@ export const acceptTask = async ({ store, runtime }: TaskServiceDeps, actor: Act
 export const rejectTask = async ({ store, settlement }: TaskServiceDeps, actor: Actor, taskId: string): Promise<Task> => {
   const task = await mustTask(store, taskId);
   requireWorker(actor, task);
-  invariant(task.status === "escrow_locked", 409, "only escrow_locked tasks can be rejected");
+  invariant(task.status === "escrow_locked", 409, "CONFLICT", "only escrow_locked tasks can be rejected");
   const hirer = await store.getAgent(task.hirerAgentId);
   const worker = await store.getAgent(task.workerAgentId);
-  invariant(hirer && worker, 404, "task agents not found");
+  invariant(hirer && worker, 404, "NOT_FOUND", "task agents not found");
   const refund = await settlement.refund(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet });
   applyTransition(task, "cancelled");
   task.settlementTxSignature = refund.txSignature;
@@ -132,13 +134,13 @@ export const submitResult = async (
 ): Promise<TaskResult> => {
   const task = await mustTask(store, taskId);
   requireWorker(actor, task);
-  invariant(task.status === "in_progress", 409, "result can only be submitted for in_progress tasks");
-  invariant(typeof input.result_payload === "object" && input.result_payload !== null, 400, "result_payload is required");
-  invariant(!Array.isArray(input.result_payload), 400, "result_payload must be a JSON object");
-  invariant(input.artifacts === undefined || Array.isArray(input.artifacts), 400, "artifacts must be an array");
+  invariant(task.status === "in_progress", 409, "CONFLICT", "result can only be submitted for in_progress tasks");
+  invariant(typeof input.result_payload === "object" && input.result_payload !== null, 400, "INVALID_BODY", "result_payload is required");
+  invariant(!Array.isArray(input.result_payload), 400, "INVALID_BODY", "result_payload must be a JSON object");
+  invariant(input.artifacts === undefined || Array.isArray(input.artifacts), 400, "INVALID_BODY", "artifacts must be an array");
   const skill = await store.getSkill(task.skillId);
-  invariant(skill, 404, "task skill not found");
-  validateJsonSchema(input.result_payload, skill.outputSchema);
+  invariant(skill, 404, "NOT_FOUND", "task skill not found");
+  validatePayloadAgainstSchema(input.result_payload, skill.outputSchema, "result_payload");
   const result: TaskResult = {
     id: store.nextId("result"),
     taskId,
@@ -164,10 +166,10 @@ export const resolveTask = async (
 ): Promise<Task> => {
   const task = await mustTask(store, taskId);
   requireHirerOrEvaluator(actor, task);
-  invariant(task.status === "submitted" || task.status === "disputed", 409, "task must be submitted or disputed before resolution");
+  invariant(task.status === "submitted" || task.status === "disputed", 409, "CONFLICT", "task must be submitted or disputed before resolution");
   const hirer = await store.getAgent(task.hirerAgentId);
   const worker = await store.getAgent(task.workerAgentId);
-  invariant(hirer && worker, 404, "task agents not found");
+  invariant(hirer && worker, 404, "NOT_FOUND", "task agents not found");
 
   if (input.resolution === "completed") {
     const payout = await withSettlementFailureAudit(store, settlement, task, "release payout failed", () =>
@@ -192,12 +194,12 @@ export const resolveTask = async (
 };
 
 export const expireTask = async ({ store, settlement }: TaskServiceDeps, actor: Actor, taskId: string): Promise<Task> => {
-  invariant(actor.role === "admin" || actor.role === "evaluator", 403, "admin or evaluator authorization required");
+  invariant(actor.role === "admin" || actor.role === "evaluator", 403, "FORBIDDEN", "admin or evaluator authorization required");
   const task = await mustTask(store, taskId);
-  invariant(toTime(task.deadline) <= toTime(store.now()), 409, "task deadline has not passed");
+  invariant(toTime(task.deadline) <= toTime(store.now()), 409, "CONFLICT", "task deadline has not passed");
   const hirer = await store.getAgent(task.hirerAgentId);
   const worker = await store.getAgent(task.workerAgentId);
-  invariant(hirer && worker, 404, "task agents not found");
+  invariant(hirer && worker, 404, "NOT_FOUND", "task agents not found");
 
   if (task.status === "submitted") {
     applyTransition(task, "disputed");
@@ -206,7 +208,7 @@ export const expireTask = async ({ store, settlement }: TaskServiceDeps, actor: 
     return task;
   }
 
-  invariant(["escrow_locked", "accepted", "in_progress"].includes(task.status), 409, "task cannot be expired from current status");
+  invariant(["escrow_locked", "accepted", "in_progress"].includes(task.status), 409, "CONFLICT", "task cannot be expired from current status");
   const refund = await withSettlementFailureAudit(store, settlement, task, "expiration refund failed", () =>
     settlement.refund(task, { hirerWallet: hirer.publisherWallet, workerWallet: worker.publisherWallet })
   );
@@ -248,23 +250,23 @@ export const getTaskGraph = async (store: DataStore, taskId: string) => {
 
 const mustTask = async (store: DataStore, taskId: string): Promise<Task> => {
   const task = await store.getTask(taskId);
-  invariant(task, 404, "task not found");
+  invariant(task, 404, "NOT_FOUND", "task not found");
   return task;
 };
 
 const applyTransition = (task: Task, nextStatus: TaskStatus) => {
-  invariant(allowedTransitions[task.status].includes(nextStatus), 409, `invalid task transition ${task.status} -> ${nextStatus}`);
+  invariant(allowedTransitions[task.status].includes(nextStatus), 409, "CONFLICT", `invalid task transition ${task.status} -> ${nextStatus}`);
   task.status = nextStatus;
 };
 
 const validateParent = async (store: DataStore, parentTaskId: string, childDeadline: string) => {
   const parent = await mustTask(store, parentTaskId);
-  invariant(parent.id !== parentTaskId || Boolean(parent), 400, "child task cannot use itself as parent");
-  invariant(new Date(childDeadline).getTime() <= new Date(parent.deadline).getTime(), 400, "child deadline cannot exceed parent deadline");
+  invariant(parent.id !== parentTaskId || Boolean(parent), 400, "INVALID_BODY", "child task cannot use itself as parent");
+  invariant(new Date(childDeadline).getTime() <= new Date(parent.deadline).getTime(), 400, "INVALID_BODY", "child deadline cannot exceed parent deadline");
   let current: Task | undefined = parent;
   const seen = new Set<string>();
   while (current) {
-    invariant(!seen.has(current.id), 400, "parent task cycle detected");
+    invariant(!seen.has(current.id), 400, "INVALID_BODY", "parent task cycle detected");
     seen.add(current.id);
     current = current.parentTaskId ? await store.getTask(current.parentTaskId) : undefined;
   }
@@ -274,7 +276,7 @@ const findRoot = async (store: DataStore, task: Task): Promise<Task> => {
   let current = task;
   const seen = new Set<string>();
   while (current.parentTaskId) {
-    invariant(!seen.has(current.id), 400, "task graph cycle detected");
+    invariant(!seen.has(current.id), 400, "INVALID_BODY", "task graph cycle detected");
     seen.add(current.id);
     current = await mustTask(store, current.parentTaskId);
   }
@@ -340,49 +342,10 @@ const createReputationEvents = async (
   await store.saveReputationEvent(event);
 };
 
-const validateJsonSchema = (payload: JsonObject, schema: JsonObject) => {
-  const schemaType = schema.type;
-  if (schemaType !== undefined) {
-    const allowedTypes = Array.isArray(schemaType) ? schemaType : [schemaType];
-    invariant(allowedTypes.includes("object"), 400, "result_payload must match skill output_schema type");
-  }
-
-  const required = schema.required;
-  if (required !== undefined) {
-    invariant(Array.isArray(required) && required.every((field) => typeof field === "string"), 400, "skill output_schema required must be a string array");
-    for (const field of required) {
-      invariant(Object.hasOwn(payload, field), 400, `result_payload missing required field ${field}`);
-    }
-  }
-
-  const properties = schema.properties;
-  if (properties !== undefined) {
-    invariant(typeof properties === "object" && properties !== null && !Array.isArray(properties), 400, "skill output_schema properties must be an object");
-    for (const [field, propertySchema] of Object.entries(properties as Record<string, JsonObject>)) {
-      if (Object.hasOwn(payload, field) && typeof propertySchema === "object" && propertySchema !== null) {
-        const expectedType = propertySchema.type;
-        if (typeof expectedType === "string") {
-          invariant(jsonType(payload[field]) === expectedType, 400, `result_payload field ${field} must be ${expectedType}`);
-        }
-      }
-    }
-  }
-};
-
-const jsonType = (value: unknown): string => {
-  if (Array.isArray(value)) {
-    return "array";
-  }
-  if (value === null) {
-    return "null";
-  }
-  return typeof value;
-};
-
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 const toTime = (value: string): number => {
   const time = new Date(value).getTime();
-  invariant(Number.isFinite(time), 400, "invalid timestamp");
+  invariant(Number.isFinite(time), 400, "INVALID_BODY", "invalid timestamp");
   return time;
 };

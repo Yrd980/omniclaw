@@ -312,11 +312,11 @@ describe("Phase 1 protocol core", () => {
     await expect(submitResult(taskDeps, { agentId: worker.id }, task.id, {
       result_payload: { summary: "ok" },
       artifacts: [],
-    })).rejects.toThrow("result_payload missing required field score");
+    })).rejects.toThrow("result_payload does not match schema");
     await expect(submitResult(taskDeps, { agentId: worker.id }, task.id, {
       result_payload: { summary: "ok", score: "high" },
       artifacts: [],
-    })).rejects.toThrow("result_payload field score must be number");
+    })).rejects.toThrow("result_payload does not match schema");
     const result = await submitResult(taskDeps, { agentId: worker.id }, task.id, {
       result_payload: { summary: "ok", score: 92 },
       artifacts: [],
@@ -431,9 +431,12 @@ describe("Phase 1 protocol core", () => {
     expect(await store.findSkillByAgentName(worker.id, skill.name)).toEqual(skill);
     expect((await store.listAgents()).map((agent) => agent.id)).toEqual(expect.arrayContaining([hirer.id, worker.id]));
     expect((await store.listSkills()).map((storedSkill) => storedSkill.id)).toContain(skill.id);
+    expect((await store.listTasksByFilters({ workerAgentId: worker.id }))).toEqual([]);
+    expect((await store.listSettlementEventsByFilters({ taskId: "missing" }))).toEqual([]);
+    expect((await store.listReputationEventsByFilters({ agentId: worker.id }))).toEqual([]);
   });
 
-  test("exposes the core Hono API routes", async () => {
+  test("exposes SDK-ready Hono API routes with DTOs, filters, detail, and event queries", async () => {
     const { app } = createApp();
     const hirer = await post(app, "/agents", { publisher_wallet: "wallet_api_hirer", name: "API Hirer", description: "Creates work" }, {
       "x-wallet": "wallet_api_hirer",
@@ -441,9 +444,14 @@ describe("Phase 1 protocol core", () => {
     const worker = await post(app, "/agents", { publisher_wallet: "wallet_api_worker", name: "API Worker", description: "Does work" }, {
       "x-wallet": "wallet_api_worker",
     });
-    const skill = await post(app, `/agents/${worker.id}/skills`, {
+    expect(hirer.agent_id).toStartWith("agent_");
+    expect(worker.publisherWallet).toBeUndefined();
+
+    const skill = await post(app, `/agents/${worker.agent_id}/skills`, {
       name: "report_generation",
       description: "Writes short reports",
+      input_schema: { type: "object", required: ["topic"], properties: { topic: { type: "string" } } },
+      output_schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } },
       base_price_lamports: "10000000",
       estimated_latency_ms: 1000,
       required_permissions: [],
@@ -451,27 +459,159 @@ describe("Phase 1 protocol core", () => {
 
     const discovery = await get(app, "/agents/discover?capability=report_generation&status=active");
     expect(discovery.results).toHaveLength(1);
+    expect(discovery.results[0].agent.agent_id).toBe(worker.agent_id);
 
     const task = await post(app, "/tasks", {
-      hirer_agent_id: hirer.id,
-      worker_agent_id: worker.id,
-      skill_id: skill.id,
+      hirer_agent_id: hirer.agent_id,
+      worker_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
       task_payload: { topic: "OmniClaw" },
       payment_lamports: "10000000",
       deadline: future(),
-    }, { "x-agent-id": hirer.id });
+    }, { "x-agent-id": hirer.agent_id });
     expect(task.status).toBe("escrow_locked");
+    expect(task.task_id).toStartWith("task_");
 
-    const accepted = await post(app, `/tasks/${task.id}/accept`, {}, { "x-agent-id": worker.id });
+    const listByWorker = await get(app, `/tasks?worker_agent_id=${worker.agent_id}&status=escrow_locked&deadline_from=${encodeURIComponent(future(-1))}`);
+    expect(listByWorker.tasks.map((listed: { task_id: string }) => listed.task_id)).toContain(task.task_id);
+
+    const accepted = await post(app, `/tasks/${task.task_id}/accept`, {}, { "x-agent-id": worker.agent_id });
     expect(accepted.status).toBe("in_progress");
-    const result = await post(app, `/tasks/${task.id}/result`, { result_payload: { ok: true }, artifacts: [] }, { "x-agent-id": worker.id });
-    expect(result.taskId).toBe(task.id);
-    const resolved = await post(app, `/tasks/${task.id}/resolve`, { resolution: "completed", quality_score: 90, review_score: 5 }, {
-      "x-agent-id": hirer.id,
+    const result = await post(app, `/tasks/${task.task_id}/result`, { result_payload: { ok: true }, artifacts: [] }, { "x-agent-id": worker.agent_id });
+    expect(result.task_id).toBe(task.task_id);
+    const resolved = await post(app, `/tasks/${task.task_id}/resolve`, { resolution: "completed", quality_score: 90, review_score: 5 }, {
+      "x-agent-id": hirer.agent_id,
     });
     expect(resolved.status).toBe("completed");
-    const graph = await get(app, `/tasks/${task.id}/graph`);
-    expect(graph.rootTaskId).toBe(task.id);
+    const detail = await get(app, `/tasks/${task.task_id}`);
+    expect(detail.task.task_id).toBe(task.task_id);
+    expect(detail.result.result_payload).toEqual({ ok: true });
+    expect(detail.settlement_events.map((event: { event_type: string }) => event.event_type)).toEqual(
+      expect.arrayContaining(["escrow_locked", "worker_paid", "platform_fee_paid", "runtime_fee_paid"]),
+    );
+    expect(detail.reputation_events).toHaveLength(1);
+
+    const settlementTimeline = await get(app, `/tasks/${task.task_id}/settlement-events`);
+    expect(settlementTimeline.settlement_events[0].task_id).toBe(task.task_id);
+    const reputation = await get(app, `/reputation-events?agent_id=${worker.agent_id}`);
+    expect(reputation.reputation_events[0].agent_id).toBe(worker.agent_id);
+    const graph = await get(app, `/tasks/${task.task_id}/graph`);
+    expect(graph.rootTaskId).toBe(task.task_id);
+  });
+
+  test("standardizes API validation and schema errors", async () => {
+    const { app } = createApp();
+    const invalidJson = await app.request("/agents", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    });
+    expect(invalidJson.status).toBe(400);
+    expect(await invalidJson.json()).toMatchObject({
+      error: { code: "INVALID_JSON", path: "/agents" },
+    });
+
+    const invalidQuery = await app.request("/tasks?deadline_from=not-a-date");
+    expect(invalidQuery.status).toBe(400);
+    expect(await invalidQuery.json()).toMatchObject({
+      error: { code: "INVALID_QUERY", path: "/tasks" },
+    });
+    const invalidHeader = await app.request("/agents", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-role": "root" },
+      body: JSON.stringify({ publisher_wallet: "wallet_bad_role", name: "Bad Role", description: "Invalid header" }),
+    });
+    expect(invalidHeader.status).toBe(400);
+    expect(await invalidHeader.json()).toMatchObject({
+      error: { code: "INVALID_HEADER", path: "/agents", details: { header: "x-role" } },
+    });
+
+    const hirer = await post(app, "/agents", { publisher_wallet: "wallet_schema_hirer", name: "Schema Hirer", description: "Creates work" }, {
+      "x-wallet": "wallet_schema_hirer",
+    });
+    const worker = await post(app, "/agents", { publisher_wallet: "wallet_schema_worker", name: "Schema Worker", description: "Does work" }, {
+      "x-wallet": "wallet_schema_worker",
+    });
+    const skill = await post(app, `/agents/${worker.agent_id}/skills`, {
+      name: "typed_input",
+      description: "Requires a typed input",
+      input_schema: { type: "object", required: ["topic"], properties: { topic: { type: "string" } } },
+      output_schema: {},
+      base_price_lamports: "10000000",
+      estimated_latency_ms: 1000,
+      required_permissions: [],
+    }, { "x-wallet": "wallet_schema_worker" });
+    const schemaFailure = await app.request("/tasks", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-agent-id": hirer.agent_id },
+      body: JSON.stringify({
+        hirer_agent_id: hirer.agent_id,
+        worker_agent_id: worker.agent_id,
+        skill_id: skill.skill_id,
+        task_payload: { topic: 42 },
+        payment_lamports: "10000000",
+        deadline: future(),
+      }),
+    });
+    expect(schemaFailure.status).toBe(400);
+    expect(await schemaFailure.json()).toMatchObject({
+      error: {
+        code: "SCHEMA_VALIDATION_FAILED",
+        path: "/tasks",
+        details: [{ path: "task_payload.topic", message: "must be string" }],
+      },
+    });
+  });
+
+  test("surfaces runtime dispatch failure through API while preserving task audit state", async () => {
+    const { app, taskDeps } = createApp();
+    taskDeps.runtime = {
+      async dispatch() {
+        throw new Error("runtime down");
+      },
+    };
+    const { hirer, worker, skill } = await apiFixture(app, "runtime");
+    const task = await post(app, "/tasks", {
+      hirer_agent_id: hirer.agent_id,
+      worker_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
+      task_payload: {},
+      payment_lamports: "10000000",
+      deadline: future(),
+    }, { "x-agent-id": hirer.agent_id });
+    const failedAccept = await app.request(`/tasks/${task.task_id}/accept`, { method: "POST", headers: { "x-agent-id": worker.agent_id } });
+    expect(failedAccept.status).toBe(500);
+    const detail = await get(app, `/tasks/${task.task_id}`);
+    expect(detail.task.status).toBe("failed");
+  });
+
+  test("surfaces settlement failure audit through API detail and timeline", async () => {
+    const { app, taskDeps, store } = createApp();
+    taskDeps.settlement = new ThrowingPayoutSettlementAdapter(undefined, store.now);
+    const { hirer, worker, skill } = await apiFixture(app, "settlement");
+    const task = await post(app, "/tasks", {
+      hirer_agent_id: hirer.agent_id,
+      worker_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
+      task_payload: {},
+      payment_lamports: "10000000",
+      deadline: future(),
+    }, { "x-agent-id": hirer.agent_id });
+    await post(app, `/tasks/${task.task_id}/accept`, {}, { "x-agent-id": worker.agent_id });
+    await post(app, `/tasks/${task.task_id}/result`, { result_payload: {}, artifacts: [] }, { "x-agent-id": worker.agent_id });
+    const failedResolve = await app.request(`/tasks/${task.task_id}/resolve`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-agent-id": hirer.agent_id },
+      body: JSON.stringify({ resolution: "completed" }),
+    });
+    expect(failedResolve.status).toBe(500);
+    const timeline = await get(app, `/tasks/${task.task_id}/settlement-events`);
+    expect(timeline.settlement_events).toContainEqual(expect.objectContaining({
+      event_type: "settlement_failed",
+      failure_reason: "release payout failed: chain down",
+    }));
+    const detail = await get(app, `/tasks/${task.task_id}`);
+    expect(detail.task.status).toBe("submitted");
   });
 });
 
@@ -497,4 +637,27 @@ const get = async (app: ReturnType<typeof createApp>["app"], path: string) => {
   const response = await app.request(path);
   expect(response.status).toBeLessThan(400);
   return response.json();
+};
+
+const apiFixture = async (app: ReturnType<typeof createApp>["app"], suffix: string) => {
+  const hirer = await post(app, "/agents", {
+    publisher_wallet: `wallet_${suffix}_hirer`,
+    name: `${suffix} Hirer`,
+    description: "Creates work",
+  }, { "x-wallet": `wallet_${suffix}_hirer` });
+  const worker = await post(app, "/agents", {
+    publisher_wallet: `wallet_${suffix}_worker`,
+    name: `${suffix} Worker`,
+    description: "Does work",
+  }, { "x-wallet": `wallet_${suffix}_worker` });
+  const skill = await post(app, `/agents/${worker.agent_id}/skills`, {
+    name: `${suffix}_skill`,
+    description: "Does protocol work",
+    input_schema: {},
+    output_schema: {},
+    base_price_lamports: "10000000",
+    estimated_latency_ms: 1000,
+    required_permissions: [],
+  }, { "x-wallet": `wallet_${suffix}_worker` });
+  return { hirer, worker, skill };
 };

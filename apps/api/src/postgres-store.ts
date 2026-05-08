@@ -1,11 +1,13 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, type SQL } from "drizzle-orm";
 import { agents, reputationEvents, settlementEvents, skills, taskResults, tasks, type DatabaseConnection } from "@omniclaw/db";
-import type { DataStore } from "./store";
+import type { DataStore, EventFilters, TaskFilters } from "./store";
 import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
 
 type DrizzleDb = DatabaseConnection["db"];
 
 export type PostgresStore = DataStore;
+
+const isSql = (condition: SQL | undefined): condition is SQL => condition !== undefined;
 
 export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
   agents: new Map(),
@@ -63,6 +65,17 @@ export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
   async listTasks() {
     return (await db.select().from(tasks)).map(taskFromRow);
   },
+  async listTasksByFilters(filters: TaskFilters) {
+    const conditions = [
+      filters.hirerAgentId === undefined ? undefined : eq(tasks.hirerAgentId, filters.hirerAgentId),
+      filters.workerAgentId === undefined ? undefined : eq(tasks.workerAgentId, filters.workerAgentId),
+      filters.status === undefined ? undefined : eq(tasks.status, filters.status),
+      filters.parentTaskId === undefined ? undefined : filters.parentTaskId === null ? isNull(tasks.parentTaskId) : eq(tasks.parentTaskId, filters.parentTaskId),
+      filters.deadlineFrom === undefined ? undefined : gte(tasks.deadline, new Date(filters.deadlineFrom)),
+      filters.deadlineTo === undefined ? undefined : lte(tasks.deadline, new Date(filters.deadlineTo)),
+    ].filter(isSql);
+    return (await db.select().from(tasks).where(conditions.length > 0 ? and(...conditions) : undefined)).map(taskFromRow);
+  },
   async saveTaskResult(taskResult: TaskResult) {
     await db.insert(taskResults).values(taskResultToRow(taskResult)).onConflictDoUpdate({
       target: taskResults.id,
@@ -79,11 +92,24 @@ export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
   async listReputationEvents() {
     return (await db.select().from(reputationEvents)).map(reputationEventFromRow);
   },
+  async listReputationEventsByFilters(filters: EventFilters) {
+    const conditions = [
+      filters.taskId === undefined ? undefined : eq(reputationEvents.taskId, filters.taskId),
+      filters.agentId === undefined ? undefined : eq(reputationEvents.agentId, filters.agentId),
+    ].filter(isSql);
+    return (await db.select().from(reputationEvents).where(conditions.length > 0 ? and(...conditions) : undefined)).map(reputationEventFromRow);
+  },
   async saveSettlementEvent(settlementEvent: SettlementEvent) {
     await db.insert(settlementEvents).values(settlementEventToRow(settlementEvent)).onConflictDoNothing();
   },
   async listSettlementEvents() {
     return (await db.select().from(settlementEvents)).map(settlementEventFromRow);
+  },
+  async listSettlementEventsByFilters(filters: EventFilters) {
+    const conditions = [
+      filters.taskId === undefined ? undefined : eq(settlementEvents.taskId, filters.taskId),
+    ].filter(isSql);
+    return (await db.select().from(settlementEvents).where(conditions.length > 0 ? and(...conditions) : undefined)).map(settlementEventFromRow);
   },
   async listSettlementEventsForTask(taskId: string) {
     return (await db.select().from(settlementEvents).where(eq(settlementEvents.taskId, taskId))).map(settlementEventFromRow);

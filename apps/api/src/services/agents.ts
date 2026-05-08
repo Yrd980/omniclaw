@@ -1,6 +1,7 @@
 import { invariant } from "../errors";
 import type { DataStore } from "../store";
 import type { Actor, Agent, AgentStatus, JsonObject, Skill } from "../types";
+import { isJsonSchemaObject } from "../validation";
 import { requirePublisher } from "./authorization";
 
 type RegisterAgentInput = {
@@ -28,8 +29,8 @@ type RegisterSkillInput = {
 };
 
 export const registerAgent = async (store: DataStore, actor: Actor, input: RegisterAgentInput): Promise<Agent> => {
-  invariant(input.publisher_wallet && input.name && input.description, 400, "publisher_wallet, name, and description are required");
-  invariant(actor.wallet === input.publisher_wallet || actor.role === "admin", 403, "publisher wallet authorization required");
+  invariant(input.publisher_wallet && input.name && input.description, 400, "INVALID_BODY", "publisher_wallet, name, and description are required");
+  invariant(actor.wallet === input.publisher_wallet || actor.role === "admin", 403, "FORBIDDEN", "publisher wallet authorization required");
   const now = store.now();
   const agent: Agent = {
     id: store.nextId("agent"),
@@ -53,16 +54,17 @@ export const registerAgent = async (store: DataStore, actor: Actor, input: Regis
 
 export const registerSkill = async (store: DataStore, actor: Actor, agentId: string, input: RegisterSkillInput): Promise<Skill> => {
   const agent = await store.getAgent(agentId);
-  invariant(agent, 404, "agent not found");
+  invariant(agent, 404, "NOT_FOUND", "agent not found");
   requirePublisher(actor, agent);
-  invariant(input.name && input.description, 400, "name and description are required");
-  invariant(BigInt(input.base_price_lamports) >= 0n, 400, "base_price_lamports must be non-negative");
-  invariant(input.estimated_latency_ms >= 0, 400, "estimated_latency_ms must be non-negative");
-  invariant(isJsonSchemaObject(input.input_schema ?? {}), 400, "input_schema must be a JSON Schema object");
-  invariant(isJsonSchemaObject(input.output_schema ?? {}), 400, "output_schema must be a JSON Schema object");
+  invariant(input.name && input.description, 400, "INVALID_BODY", "name and description are required");
+  invariant(/^\d+$/.test(input.base_price_lamports), 400, "INVALID_BODY", "base_price_lamports must be a non-negative integer string");
+  invariant(input.estimated_latency_ms >= 0, 400, "INVALID_BODY", "estimated_latency_ms must be non-negative");
+  invariant(isJsonSchemaObject(input.input_schema ?? {}), 400, "INVALID_BODY", "input_schema must be a JSON Schema object");
+  invariant(isJsonSchemaObject(input.output_schema ?? {}), 400, "INVALID_BODY", "output_schema must be a JSON Schema object");
   invariant(
     !(await store.findSkillByAgentName(agentId, input.name)),
     409,
+    "CONFLICT",
     "skill names must be unique per agent",
   );
   const now = store.now();
@@ -81,12 +83,4 @@ export const registerSkill = async (store: DataStore, actor: Actor, agentId: str
   };
   await store.saveSkill(skill);
   return skill;
-};
-
-const isJsonSchemaObject = (value: unknown): value is JsonObject => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const schemaType = (value as JsonObject).type;
-  return schemaType === undefined || typeof schemaType === "string" || Array.isArray(schemaType);
 };

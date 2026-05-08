@@ -11,14 +11,31 @@ export type StoreRepository = {
   getTask(id: string): Promise<Task | undefined>;
   saveTask(task: Task): Promise<void>;
   listTasks(): Promise<Task[]>;
+  listTasksByFilters(filters: TaskFilters): Promise<Task[]>;
   saveTaskResult(taskResult: TaskResult): Promise<void>;
   getTaskResultForTask(taskId: string): Promise<TaskResult | undefined>;
   saveReputationEvent(reputationEvent: ReputationEvent): Promise<void>;
   listReputationEvents(): Promise<ReputationEvent[]>;
+  listReputationEventsByFilters(filters: EventFilters): Promise<ReputationEvent[]>;
   saveSettlementEvent(settlementEvent: SettlementEvent): Promise<void>;
   listSettlementEvents(): Promise<SettlementEvent[]>;
+  listSettlementEventsByFilters(filters: EventFilters): Promise<SettlementEvent[]>;
   listSettlementEventsForTask(taskId: string): Promise<SettlementEvent[]>;
   hasSettlementEvent(taskId: string, eventType: SettlementEvent["eventType"]): Promise<boolean>;
+};
+
+export type TaskFilters = {
+  hirerAgentId?: string;
+  workerAgentId?: string;
+  status?: Task["status"];
+  parentTaskId?: string | null;
+  deadlineFrom?: string;
+  deadlineTo?: string;
+};
+
+export type EventFilters = {
+  taskId?: string;
+  agentId?: string;
 };
 
 export type DataStore = StoreRepository & {
@@ -79,6 +96,9 @@ export const createMemoryStore = (): DataStore => {
     async listTasks() {
       return [...this.tasks.values()];
     },
+    async listTasksByFilters(filters: TaskFilters) {
+      return filterTasks([...this.tasks.values()], filters);
+    },
     async saveTaskResult(taskResult: TaskResult) {
       this.taskResults.set(taskResult.id, taskResult);
     },
@@ -91,11 +111,20 @@ export const createMemoryStore = (): DataStore => {
     async listReputationEvents() {
       return [...this.reputationEvents.values()];
     },
+    async listReputationEventsByFilters(filters: EventFilters) {
+      return [...this.reputationEvents.values()].filter((event) =>
+        (filters.taskId === undefined || event.taskId === filters.taskId) &&
+        (filters.agentId === undefined || event.agentId === filters.agentId)
+      );
+    },
     async saveSettlementEvent(settlementEvent: SettlementEvent) {
       this.settlementEvents.set(settlementEvent.id, settlementEvent);
     },
     async listSettlementEvents() {
       return [...this.settlementEvents.values()];
+    },
+    async listSettlementEventsByFilters(filters: EventFilters) {
+      return [...this.settlementEvents.values()].filter((event) => filters.taskId === undefined || event.taskId === filters.taskId);
     },
     async listSettlementEventsForTask(taskId: string) {
       return [...this.settlementEvents.values()].filter((event) => event.taskId === taskId);
@@ -105,3 +134,13 @@ export const createMemoryStore = (): DataStore => {
     },
   };
 };
+
+export const filterTasks = (tasks: Task[], filters: TaskFilters): Task[] =>
+  tasks.filter((task) =>
+    (filters.hirerAgentId === undefined || task.hirerAgentId === filters.hirerAgentId) &&
+    (filters.workerAgentId === undefined || task.workerAgentId === filters.workerAgentId) &&
+    (filters.status === undefined || task.status === filters.status) &&
+    (filters.parentTaskId === undefined || task.parentTaskId === filters.parentTaskId) &&
+    (filters.deadlineFrom === undefined || new Date(task.deadline).getTime() >= new Date(filters.deadlineFrom).getTime()) &&
+    (filters.deadlineTo === undefined || new Date(task.deadline).getTime() <= new Date(filters.deadlineTo).getTime())
+  );

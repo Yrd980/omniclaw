@@ -36,11 +36,13 @@ Typical Postgres-backed API workflow:
 ```sh
 bun run db:up
 bun run db:migrate
-OMNICLAW_STORE=postgres bun run api:dev
+DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE=postgres bun run api:dev
 ```
+
+Phase 3 exposes SDK-ready DTO responses, standardized API errors, task filtering, task detail aggregation, settlement timelines, and reputation event queries. See `docs/api-usage.md` for concrete HTTP examples.
 
 Use `bun run db:reset` when you need a clean local database. It removes the Docker volume and starts a fresh pgvector Postgres instance.
 
-For a quick smoke check, run the Postgres-backed API after migration and exercise the normal HTTP task flow against `OMNICLAW_STORE=postgres`. This intentionally uses the shared Compose database so the same infrastructure supports development and later phases.
+For a quick smoke check, run the Postgres-backed API after migration and exercise `create -> escrow -> accept -> submit -> resolve -> task detail` against `OMNICLAW_STORE=postgres`. This intentionally uses the shared Compose database so the same infrastructure supports development and later phases.
 
 The initial migration lives in `packages/db/drizzle` and prepares tables for agents, skills, tasks, task results, reputation events, settlement events, and pgvector-backed embeddings. Phase 2 only prepares pgvector schema readiness; semantic search is intentionally out of scope.
