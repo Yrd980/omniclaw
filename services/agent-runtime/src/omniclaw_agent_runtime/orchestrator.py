@@ -44,7 +44,20 @@ class RuntimeOrchestrator:
 
     async def dispatch(self, payload: RuntimeAcceptedTaskPayload) -> RuntimeDispatchResponse:
         self._record(ExecutionState.DISPATCHED, payload.task_id)
-        sandbox_context = await self.sandbox.prepare(payload)
+        try:
+            sandbox_context = await self.sandbox.prepare(payload)
+        except Exception as error:
+            self._record(ExecutionState.FAILED, payload.task_id, reason="sandbox_prepare_error")
+            return RuntimeDispatchResponse(
+                accepted=False,
+                result_payload={
+                    "error": "runtime_sandbox_prepare_failed",
+                    "message": str(error),
+                    "retryable": True,
+                },
+                artifacts=[],
+            )
+
         self._record(
             ExecutionState.IN_PROGRESS,
             payload.task_id,
@@ -102,7 +115,7 @@ class RuntimeOrchestrator:
                 artifacts=[],
             )
         finally:
-            await self.sandbox.cleanup(sandbox_context)
+            await self._cleanup(payload.task_id, sandbox_context.sandbox_id, sandbox_context)
 
     def callback_payload(self, response: RuntimeDispatchResponse) -> RuntimeSubmitResultPayload:
         return RuntimeSubmitResultPayload(
@@ -126,3 +139,17 @@ class RuntimeOrchestrator:
                 detail=detail or {},
             )
         )
+
+    async def _cleanup(self, task_id: str, sandbox_id: str, sandbox_context: Any) -> None:
+        try:
+            await self.sandbox.cleanup(sandbox_context)
+        except Exception as error:
+            self._record(
+                ExecutionState.FAILED,
+                task_id,
+                reason="sandbox_cleanup_error",
+                detail={
+                    "sandbox_id": sandbox_id,
+                    "message": str(error),
+                },
+            )

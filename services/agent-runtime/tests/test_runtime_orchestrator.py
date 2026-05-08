@@ -69,6 +69,22 @@ class TrackingSandbox:
         self.cleaned = True
 
 
+class PrepareFailingSandbox:
+    async def prepare(self, task: RuntimeAcceptedTaskPayload) -> SandboxContext:
+        raise RuntimeError("sandbox prepare failed")
+
+    async def cleanup(self, context: SandboxContext) -> None:
+        raise AssertionError("cleanup should not run when prepare fails")
+
+
+class CleanupFailingSandbox:
+    async def prepare(self, task: RuntimeAcceptedTaskPayload) -> SandboxContext:
+        return SandboxContext(sandbox_id="sandbox-1", metadata={"task_id": task.task_id})
+
+    async def cleanup(self, context: SandboxContext) -> None:
+        raise RuntimeError("sandbox cleanup failed")
+
+
 def test_dispatch_generates_callback_payload_and_lifecycle_events() -> None:
     sandbox = TrackingSandbox()
     orchestrator = RuntimeOrchestrator(
@@ -96,6 +112,44 @@ def test_dispatch_generates_callback_payload_and_lifecycle_events() -> None:
     ]
     assert sandbox.prepared is True
     assert sandbox.cleaned is True
+
+
+def test_sandbox_prepare_failure_maps_to_failed_result() -> None:
+    orchestrator = RuntimeOrchestrator(SuccessfulProvider(), sandbox=PrepareFailingSandbox())
+
+    response = asyncio.run(orchestrator.dispatch(payload()))
+
+    assert response.accepted is False
+    assert response.result_payload == {
+        "error": "runtime_sandbox_prepare_failed",
+        "message": "sandbox prepare failed",
+        "retryable": True,
+    }
+    assert [event.state for event in orchestrator.events] == [
+        ExecutionState.DISPATCHED,
+        ExecutionState.FAILED,
+    ]
+    assert orchestrator.events[-1].reason == "sandbox_prepare_error"
+
+
+def test_sandbox_cleanup_failure_does_not_mask_completed_result() -> None:
+    orchestrator = RuntimeOrchestrator(SuccessfulProvider(), sandbox=CleanupFailingSandbox())
+
+    response = asyncio.run(orchestrator.dispatch(payload()))
+
+    assert response.accepted is True
+    assert response.result_payload == {"task_id": "task-1", "ok": True}
+    assert [event.state for event in orchestrator.events] == [
+        ExecutionState.DISPATCHED,
+        ExecutionState.IN_PROGRESS,
+        ExecutionState.COMPLETED,
+        ExecutionState.FAILED,
+    ]
+    assert orchestrator.events[-1].reason == "sandbox_cleanup_error"
+    assert orchestrator.events[-1].detail == {
+        "sandbox_id": "sandbox-1",
+        "message": "sandbox cleanup failed",
+    }
 
 
 def test_provider_failure_maps_to_failed_state_and_retryable_result() -> None:
