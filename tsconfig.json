@@ -10,7 +10,9 @@
     "types": ["bun"],
     "paths": {
       "@omniclaw/db": ["./packages/db/src/index.ts"],
-      "@omniclaw/db/*": ["./packages/db/src/*"]
+      "@omniclaw/db/*": ["./packages/db/src/*"],
+      "@omniclaw/sdk": ["./packages/sdk/src/index.ts"],
+      "@omniclaw/sdk/*": ["./packages/sdk/src/*"]
     }
   },
   "include": [

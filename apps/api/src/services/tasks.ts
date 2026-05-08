@@ -1,5 +1,5 @@
 import type { SettlementAdapter } from "../adapters/settlement";
-import type { RuntimeAdapter } from "../adapters/runtime";
+import { runtimeAcceptedTaskPayload, type RuntimeAdapter } from "../adapters/runtime";
 import type { FeeConfig } from "../config";
 import { invariant } from "../errors";
 import type { DataStore } from "../store";
@@ -95,7 +95,7 @@ export const acceptTask = async ({ store, runtime }: TaskServiceDeps, actor: Act
   await store.saveTask(task);
   let dispatch;
   try {
-    dispatch = await runtime.dispatch(task);
+    dispatch = await runtime.dispatch(runtimeAcceptedTaskPayload(task));
   } catch (error) {
     await failAcceptedTask(store, task);
     throw error;

@@ -2,6 +2,8 @@
 
 The API is intentionally shaped for a future SDK: requests use snake_case protocol fields, responses return DTOs instead of internal storage objects, and errors share one envelope.
 
+For TypeScript SDK examples and the runtime callback payload contract, see `docs/sdk-usage.md`.
+
 ## Local Postgres Workflow
 
 ```sh
