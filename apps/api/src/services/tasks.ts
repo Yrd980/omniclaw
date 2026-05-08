@@ -104,6 +104,9 @@ export const acceptTask = async ({ store, runtime }: TaskServiceDeps, actor: Act
     applyTransition(task, "in_progress");
     task.updatedAt = store.now();
     await store.saveTask(task);
+    if (shouldSubmitRuntimeResult(task, dispatch)) {
+      await submitRuntimeResult(store, task, dispatch.resultPayload, dispatch.artifacts);
+    }
   } else {
     await failAcceptedTask(store, task);
   }
@@ -314,6 +317,39 @@ const failAcceptedTask = async (store: DataStore, task: Task) => {
     task.updatedAt = store.now();
     await store.saveTask(task);
   }
+};
+
+const shouldSubmitRuntimeResult = (
+  task: Task,
+  dispatch: { submitResult?: boolean; resultPayload?: JsonObject },
+): dispatch is { submitResult: true; resultPayload: JsonObject } =>
+  dispatch.submitResult === true
+  && Boolean(dispatch.resultPayload)
+  && task.taskPayload.runtime_submit_result !== false;
+
+const submitRuntimeResult = async (
+  store: DataStore,
+  task: Task,
+  resultPayload: JsonObject,
+  artifacts: unknown[] | undefined,
+) => {
+  const skill = await store.getSkill(task.skillId);
+  invariant(skill, 404, "NOT_FOUND", "task skill not found");
+  validatePayloadAgainstSchema(resultPayload, skill.outputSchema, "result_payload");
+  const result: TaskResult = {
+    id: store.nextId("result"),
+    taskId: task.id,
+    workerAgentId: task.workerAgentId,
+    resultPayload,
+    artifacts: artifacts ?? [],
+    qualityScore: null,
+    submittedAt: store.now(),
+  };
+  await store.saveTaskResult(result);
+  applyTransition(task, "submitted");
+  task.submittedAt = result.submittedAt;
+  task.updatedAt = result.submittedAt;
+  await store.saveTask(task);
 };
 
 const createReputationEvents = async (

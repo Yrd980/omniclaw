@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package omniclaw.runtime.v1;
+
+service AgentRuntimeService {
+  rpc DispatchTask(DispatchTaskRequest) returns (DispatchTaskResponse);
+  rpc GetTaskProgress(GetTaskProgressRequest) returns (GetTaskProgressResponse);
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+}
+
+message StructJson {
+  string json = 1;
+}
+
+message RuntimeCallback {
+  string method = 1;
+  string path = 2;
+  map<string, string> actor_headers = 3;
+}
+
+message DispatchTaskRequest {
+  string task_id = 1;
+  optional string parent_task_id = 2;
+  string hirer_agent_id = 3;
+  string worker_agent_id = 4;
+  string skill_id = 5;
+  StructJson task_payload = 6;
+  string payment_lamports = 7;
+  string worker_payout_lamports = 8;
+  string deadline = 9;
+  optional string accepted_at = 10;
+  RuntimeCallback callback = 11;
+}
+
+message DispatchTaskResponse {
+  bool accepted = 1;
+  StructJson result_payload = 2;
+  repeated StructJson artifacts = 3;
+}
+
+message GetTaskProgressRequest {
+  string task_id = 1;
+}
+
+message ExecutionEvent {
+  string state = 1;
+  string task_id = 2;
+  string timestamp = 3;
+  optional string reason = 4;
+  StructJson detail = 5;
+}
+
+message GetTaskProgressResponse {
+  repeated ExecutionEvent events = 1;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+}
+
+message CancelTaskResponse {
+  bool cancelled = 1;
+}

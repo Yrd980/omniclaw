@@ -64,16 +64,48 @@ The callback body generated for the API result endpoint uses:
 Core orchestration lives in `src/omniclaw_agent_runtime`:
 
 - `contracts.py` validates request, dispatch response, and submit-result payloads.
-- `providers.py` defines the provider protocol, normalized provider result, failure mapping, and the first `DeepSeekProvider`.
-- `graphs.py` defines the `RuntimeGraph` protocol. `LinearRuntimeGraph` delegates directly to a provider today and can be replaced by a LangGraph implementation later.
-- `sandbox.py` defines sandbox lifecycle boundaries. `NoopSandbox` is local-only; future E2B support should implement the `Sandbox` protocol outside core orchestration.
+- `providers.py` defines the provider protocol, normalized provider result, failure mapping, and DeepSeek providers. `LangChainDeepSeekProvider` is the default production path.
+- `graphs.py` defines the `RuntimeGraph` protocol. `LangGraphRuntimeGraph` is the default execution graph; `LinearRuntimeGraph` remains available for focused tests.
+- `sandbox.py` defines sandbox lifecycle boundaries. `NoopSandbox` is local-only and `E2BSandbox` is enabled with `OMNICLAW_RUNTIME_SANDBOX=e2b`.
 - `orchestrator.py` owns execution lifecycle states: dispatch, progress, completion, failure, timeout, and cancellation.
 - `service.py` exposes a small service facade and environment-driven factory.
+- `grpc_service.py` exposes `AgentRuntimeService` over gRPC using `packages/proto/agent_runtime.proto`.
 
 Provider implementations are swappable through the `ModelProvider` protocol. OpenAI, Anthropic, local models, or routing providers should add provider classes without changing task contracts, sandbox interfaces, or the API callback shape.
 
-## API Integration Plan
+## Live Web Observations
 
-The API still uses the TypeScript mock runtime adapter for Phase 6. Later integration should replace `MockRuntimeAdapter` or `HttpCallbackRuntimeAdapter` wiring with a transport that sends `runtimeAcceptedTaskPayload(task)` to this Python service and posts the generated `RuntimeSubmitResultPayload` back to `/tasks/:id/result` using the callback actor headers.
+Model-backed tasks may include `task_payload.web_requests` to request bounded HTTP GET observations before model execution:
 
-Real gRPC wiring, real E2B execution, wallet settlement, and browser UI changes remain outside this runtime foundation.
+```json
+{
+  "task_payload": {
+    "web_requests": [
+      {
+        "name": "binance_24hr",
+        "url": "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT"
+      }
+    ]
+  }
+}
+```
+
+The provider fetches up to five URLs, injects successful observations into the model prompt, and returns the observations as artifacts. The runtime does not expose private prompts, environment variables, or hidden reasoning.
+
+For coordinator-style parent tasks that need child results before final submission, set `task_payload.runtime_submit_result=false`. The API will keep the parent task `in_progress` after runtime dispatch so the coordinator can discover workers, hire child agents, collect child task details, and submit the final aggregate result.
+
+## API Integration
+
+Start the gRPC runtime:
+
+```sh
+uv run python -m omniclaw_agent_runtime.grpc_service --bind 0.0.0.0:50051
+```
+
+Then run the API with:
+
+```sh
+OMNICLAW_RUNTIME_ADAPTER=grpc OMNICLAW_RUNTIME_GRPC_TARGET=localhost:50051 bun run api:dev
+```
+
+Wallet settlement and browser UI changes remain outside this runtime foundation.

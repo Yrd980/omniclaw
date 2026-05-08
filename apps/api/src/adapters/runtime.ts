@@ -27,6 +27,7 @@ export type RuntimeSubmitResultPayload = {
 
 export type RuntimeDispatchResult = {
   accepted: boolean;
+  submitResult?: boolean;
   resultPayload?: JsonObject;
   artifacts?: unknown[];
 };
@@ -73,6 +74,43 @@ export class HttpCallbackRuntimeAdapter implements RuntimeAdapter {
   }
 }
 
+export class GrpcRuntimeAdapter implements RuntimeAdapter {
+  private clientPromise: Promise<GrpcRuntimeClient> | null = null;
+
+  constructor(
+    private readonly target: string,
+    private readonly protoPath = new URL("../../../../packages/proto/agent_runtime.proto", import.meta.url).pathname,
+  ) {}
+
+  async dispatch(payload: RuntimeAcceptedTaskPayload): Promise<RuntimeDispatchResult> {
+    const response = await this.dispatchGrpc(toGrpcDispatchRequest(payload));
+    return {
+      accepted: response.accepted === true,
+      submitResult: true,
+      resultPayload: parseJsonObject(response.resultPayload?.json),
+      artifacts: Array.isArray(response.artifacts) ? response.artifacts.map((artifact) => parseJsonValue(artifact.json)) : [],
+    };
+  }
+
+  protected async dispatchGrpc(request: GrpcDispatchRequest): Promise<GrpcDispatchResponse> {
+    const client = await this.client();
+    return await new Promise<GrpcDispatchResponse>((resolve, reject) => {
+      client.DispatchTask(request, (error, result) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(result);
+      });
+    });
+  }
+
+  private async client(): Promise<GrpcRuntimeClient> {
+    this.clientPromise ??= createGrpcRuntimeClient(this.target, this.protoPath);
+    return this.clientPromise;
+  }
+}
+
 export const runtimeAcceptedTaskPayload = (task: Task): RuntimeAcceptedTaskPayload => ({
   task_id: task.id,
   parent_task_id: task.parentTaskId,
@@ -95,3 +133,76 @@ export const runtimeAcceptedTaskPayload = (task: Task): RuntimeAcceptedTaskPaylo
 
 const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+type GrpcRuntimeClient = {
+  DispatchTask(request: GrpcDispatchRequest, callback: (error: Error | null, response: GrpcDispatchResponse) => void): void;
+};
+
+type GrpcDispatchRequest = {
+  taskId: string;
+  parentTaskId?: string;
+  hirerAgentId: string;
+  workerAgentId: string;
+  skillId: string;
+  taskPayload: { json: string };
+  paymentLamports: string;
+  workerPayoutLamports: string;
+  deadline: string;
+  acceptedAt?: string;
+  callback: {
+    method: "POST";
+    path: string;
+    actorHeaders: Record<string, string>;
+  };
+};
+
+type GrpcDispatchResponse = {
+  accepted: boolean;
+  resultPayload?: { json: string };
+  artifacts?: Array<{ json: string }>;
+};
+
+const createGrpcRuntimeClient = async (target: string, protoPath: string): Promise<GrpcRuntimeClient> => {
+  const grpc = await import("@grpc/grpc-js");
+  const protoLoader = await import("@grpc/proto-loader");
+  const packageDefinition = protoLoader.loadSync(protoPath, {
+    defaults: true,
+    keepCase: false,
+    longs: String,
+    oneofs: true,
+  });
+  const loaded = grpc.loadPackageDefinition(packageDefinition) as Record<string, unknown>;
+  const runtimePackage = (((loaded.omniclaw as Record<string, unknown>).runtime as Record<string, unknown>).v1 as Record<string, unknown>);
+  const Client = runtimePackage.AgentRuntimeService as new (target: string, credentials: unknown) => GrpcRuntimeClient;
+  return new Client(target, grpc.credentials.createInsecure());
+};
+
+const toGrpcDispatchRequest = (payload: RuntimeAcceptedTaskPayload): GrpcDispatchRequest => ({
+  taskId: payload.task_id,
+  ...(payload.parent_task_id ? { parentTaskId: payload.parent_task_id } : {}),
+  hirerAgentId: payload.hirer_agent_id,
+  workerAgentId: payload.worker_agent_id,
+  skillId: payload.skill_id,
+  taskPayload: { json: JSON.stringify(payload.task_payload) },
+  paymentLamports: payload.payment_lamports,
+  workerPayoutLamports: payload.worker_payout_lamports,
+  deadline: payload.deadline,
+  ...(payload.accepted_at ? { acceptedAt: payload.accepted_at } : {}),
+  callback: {
+    method: payload.callback.method,
+    path: payload.callback.path,
+    actorHeaders: payload.callback.actor_headers,
+  },
+});
+
+const parseJsonObject = (value: string | undefined): JsonObject | undefined => {
+  const parsed = parseJsonValue(value);
+  return isJsonObject(parsed) ? parsed : undefined;
+};
+
+const parseJsonValue = (value: string | undefined): unknown => {
+  if (!value) {
+    return {};
+  }
+  return JSON.parse(value);
+};

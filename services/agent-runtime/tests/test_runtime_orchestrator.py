@@ -34,7 +34,7 @@ def payload() -> RuntimeAcceptedTaskPayload:
 class SuccessfulProvider:
     name = "test-provider"
 
-    async def execute(self, task: RuntimeAcceptedTaskPayload) -> ProviderResult:
+    async def execute(self, task: RuntimeAcceptedTaskPayload, *, sandbox_metadata: dict[str, str] | None = None) -> ProviderResult:
         return ProviderResult(
             result_payload={"task_id": task.task_id, "ok": True},
             artifacts=[{"kind": "text", "value": "done"}],
@@ -44,14 +44,14 @@ class SuccessfulProvider:
 class FailingProvider:
     name = "test-provider"
 
-    async def execute(self, task: RuntimeAcceptedTaskPayload) -> ProviderResult:
+    async def execute(self, task: RuntimeAcceptedTaskPayload, *, sandbox_metadata: dict[str, str] | None = None) -> ProviderResult:
         raise ProviderExecutionError("rate limited", code="provider_http_error", retryable=True)
 
 
 class SlowProvider:
     name = "test-provider"
 
-    async def execute(self, task: RuntimeAcceptedTaskPayload) -> ProviderResult:
+    async def execute(self, task: RuntimeAcceptedTaskPayload, *, sandbox_metadata: dict[str, str] | None = None) -> ProviderResult:
         await asyncio.sleep(10)
         return ProviderResult(result_payload={"ok": True})
 

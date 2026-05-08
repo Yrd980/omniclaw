@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createOmniClawClient, OmniClawApiError, type AgentDto, type SkillDto } from "@omniclaw/sdk";
 import { MockSettlementAdapter } from "../src/adapters/settlement";
-import type { RuntimeAcceptedTaskPayload } from "../src/adapters/runtime";
+import { GrpcRuntimeAdapter, type RuntimeAcceptedTaskPayload } from "../src/adapters/runtime";
 import { createApp } from "../src/app";
 import type { Task } from "../src/types";
 
@@ -187,6 +187,107 @@ describe("Phase 4 SDK client and runtime callback contract", () => {
       },
     });
   });
+
+  test("submits runtime results returned through the dispatch contract", async () => {
+    const { client, hirer, worker, skill } = await sdkFixture("runtime_result", ({ taskDeps }) => {
+      taskDeps.runtime = {
+        async dispatch() {
+          return {
+            accepted: true,
+            submitResult: true,
+            resultPayload: { ok: true },
+            artifacts: [{ kind: "text", value: "runtime" }],
+          };
+        },
+      };
+    });
+    const task = await client.createTask({
+      hirer_agent_id: hirer.agent_id,
+      worker_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
+      task_payload: { topic: "contract" },
+      payment_lamports: "10000000",
+      deadline: future(),
+    }, { agentId: hirer.agent_id });
+
+    const accepted = await client.acceptTask(task.task_id, { agentId: worker.agent_id });
+    const detail = await client.getTaskDetail(task.task_id);
+
+    expect(accepted.status).toBe("submitted");
+    expect(detail.result?.result_payload).toEqual({ ok: true });
+    expect(detail.result?.artifacts).toEqual([{ kind: "text", value: "runtime" }]);
+  });
+
+  test("allows coordinator tasks to defer runtime result submission", async () => {
+    const { client, hirer, worker, skill } = await sdkFixture("runtime_defer", ({ taskDeps }) => {
+      taskDeps.runtime = {
+        async dispatch() {
+          return {
+            accepted: true,
+            submitResult: true,
+            resultPayload: { ok: true },
+          };
+        },
+      };
+    });
+    const task = await client.createTask({
+      hirer_agent_id: hirer.agent_id,
+      worker_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
+      task_payload: { topic: "coordination", runtime_submit_result: false },
+      payment_lamports: "10000000",
+      deadline: future(),
+    }, { agentId: hirer.agent_id });
+
+    const accepted = await client.acceptTask(task.task_id, { agentId: worker.agent_id });
+    const detail = await client.getTaskDetail(task.task_id);
+
+    expect(accepted.status).toBe("in_progress");
+    expect(detail.result).toBeNull();
+  });
+
+  test("maps runtime callback contract payloads through the gRPC adapter", async () => {
+    const adapter = new TestGrpcRuntimeAdapter("localhost:50051");
+    const result = await adapter.dispatch({
+      task_id: "task-1",
+      parent_task_id: null,
+      hirer_agent_id: "hirer-1",
+      worker_agent_id: "worker-1",
+      skill_id: "skill-1",
+      task_payload: { topic: "contract" },
+      payment_lamports: "1000",
+      worker_payout_lamports: "900",
+      deadline: future(),
+      accepted_at: null,
+      callback: {
+        method: "POST",
+        path: "/tasks/task-1/result",
+        actor_headers: { "x-agent-id": "worker-1" },
+      },
+    });
+
+    expect(adapter.request).toEqual({
+      taskId: "task-1",
+      hirerAgentId: "hirer-1",
+      workerAgentId: "worker-1",
+      skillId: "skill-1",
+      taskPayload: { json: JSON.stringify({ topic: "contract" }) },
+      paymentLamports: "1000",
+      workerPayoutLamports: "900",
+      deadline: expect.any(String),
+      callback: {
+        method: "POST",
+        path: "/tasks/task-1/result",
+        actorHeaders: { "x-agent-id": "worker-1" },
+      },
+    });
+    expect(result).toEqual({
+      accepted: true,
+      submitResult: true,
+      resultPayload: { ok: true },
+      artifacts: [{ kind: "text", value: "done" }],
+    });
+  });
 });
 
 const future = (minutes = 60) => new Date(Date.now() + minutes * 60_000).toISOString();
@@ -225,3 +326,16 @@ type _SdkContractCompileCoverage = [
   Awaited<ReturnType<ReturnType<typeof createOmniClawClient>["getTaskDetail"]>>["task"]["task_payload"],
   RuntimeAcceptedTaskPayload["callback"]["actor_headers"]["x-agent-id"],
 ];
+
+class TestGrpcRuntimeAdapter extends GrpcRuntimeAdapter {
+  request: unknown;
+
+  protected override async dispatchGrpc(request: unknown): Promise<{ accepted: boolean; resultPayload?: { json: string }; artifacts?: Array<{ json: string }> }> {
+    this.request = request;
+    return {
+      accepted: true,
+      resultPayload: { json: JSON.stringify({ ok: true }) },
+      artifacts: [{ json: JSON.stringify({ kind: "text", value: "done" }) }],
+    };
+  }
+}

@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .contracts import RuntimeAcceptedTaskPayload, RuntimeDispatchResponse
-from .config import RuntimeSettings, build_provider
+from .config import RuntimeSettings, build_graph, build_provider, build_sandbox
 from .orchestrator import RuntimeOrchestrator
 
 
@@ -20,5 +20,10 @@ class RuntimeService:
 def build_runtime_service(settings: RuntimeSettings | None = None) -> RuntimeService:
     resolved = settings or RuntimeSettings.from_env()
     provider = build_provider(resolved)
-    orchestrator = RuntimeOrchestrator(provider=provider, timeout_seconds=resolved.timeout_seconds)
+    orchestrator = RuntimeOrchestrator(
+        provider=provider,
+        sandbox=build_sandbox(resolved),
+        graph=build_graph(resolved),
+        timeout_seconds=resolved.timeout_seconds,
+    )
     return RuntimeService(orchestrator)

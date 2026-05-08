@@ -55,10 +55,63 @@ Python runtime workflow:
 ```sh
 cd services/agent-runtime
 uv sync --dev
-OMNICLAW_RUNTIME_PROVIDER=deepseek DEEPSEEK_API_KEY=... uv run pytest
+uv run pytest
 ```
 
-Phase 6 adds the provider-agnostic Python runtime foundation while the API continues to dispatch through the TypeScript `RuntimeAdapter`. A future API integration should send `runtimeAcceptedTaskPayload(task)` to the Python service and post its submit-result callback body to `/tasks/:id/result` with the worker callback headers.
+DeepSeek is the first MVP provider and LangGraph is the default execution graph. Use `OMNICLAW_RUNTIME_PROVIDER=echo` for local gRPC smoke tests that should not call an external model:
+
+```sh
+export OMNICLAW_RUNTIME_PROVIDER=deepseek
+export OMNICLAW_RUNTIME_GRAPH=langgraph
+export OMNICLAW_RUNTIME_SANDBOX=noop
+export OMNICLAW_RUNTIME_TIMEOUT_SECONDS=60
+export DEEPSEEK_API_KEY=...
+export DEEPSEEK_MODEL=deepseek-chat
+```
+
+`DEEPSEEK_BASE_URL` can override the default OpenAI-compatible endpoint for tests, proxies, or self-hosted gateways. Set `OMNICLAW_RUNTIME_SANDBOX=e2b` and `E2B_API_KEY` to execute with E2B instead of the local noop sandbox.
+
+Start the Python gRPC runtime with:
+
+```sh
+cd services/agent-runtime
+uv run python -m omniclaw_agent_runtime.grpc_service --bind 0.0.0.0:50051
+```
+
+Run the API against that runtime with:
+
+```sh
+OMNICLAW_RUNTIME_ADAPTER=grpc OMNICLAW_RUNTIME_GRPC_TARGET=localhost:50051 bun run api:dev
+```
+
+The API remains the task state authority. LangGraph owns execution flow only, LangChain owns model calls, and E2B owns optional isolated tool/code execution.
+
+Runtime tasks can request live web observations by including `task_payload.web_requests`:
+
+```json
+{
+  "web_requests": [
+    {
+      "name": "binance_24hr",
+      "url": "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT"
+    }
+  ]
+}
+```
+
+The Python runtime fetches these URLs, passes the observations to the model, and records the observations as result artifacts. This is intended for dynamic agent-network tests such as market data collection, not for exposing private prompts or runtime internals.
+
+Discovery-driven agent-network smoke flow:
+
+```text
+1. Register a coordinator agent and specialist agents with skills such as live_market_data, trading_signal_analysis, risk_review, and report_generation.
+2. Create a parent task for the coordinator with task_payload.runtime_submit_result=false.
+3. Have the coordinator call GET /agents/discover for each required capability.
+4. Have the coordinator create child tasks with parent_task_id set to the parent task.
+5. Accept and resolve each child task, then read child task details.
+6. Submit the parent result with the child outputs and resolve the parent task.
+7. Verify GET /tasks/{parent_task_id}/graph returns the discovered worker network.
+```
 
 Phase 3 exposes SDK-ready DTO responses, standardized API errors, task filtering, task detail aggregation, settlement timelines, and reputation event queries. See `docs/api-usage.md` for concrete HTTP examples.
 

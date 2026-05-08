@@ -3,7 +3,14 @@ name = "omniclaw-agent-runtime"
 version = "0.1.0"
 description = "Python runtime foundation for OmniClaw task execution."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "e2b>=2.0.0",
+    "grpcio>=1.76.0",
+    "langchain>=1.0.0",
+    "langchain-openai>=1.0.0",
+    "langgraph>=1.0.0",
+    "protobuf>=6.33.0",
+]
 
 [build-system]
 requires = ["hatchling"]

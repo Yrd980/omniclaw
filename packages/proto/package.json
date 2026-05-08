@@ -1,0 +1,8 @@
+{
+  "name": "@omniclaw/proto",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./agent-runtime": "./agent_runtime.proto"
+  }
+}
