@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createRuntimeAdapterFromEnv } from "./adapters/runtime-factory";
 import { MockSettlementAdapter } from "./adapters/settlement";
+import { solanaContractInfo } from "./adapters/solana-contract";
 import { DEFAULT_DISCOVERY_RANKING_CONFIG, type DiscoveryRankingConfig } from "./config";
 import { agentDto, reputationEventDto, settlementEventDto, skillDto, taskDto, taskResultDto } from "./dto";
 import { ApiError } from "./errors";
@@ -69,6 +70,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/settlement/solana", (c) => c.json(solanaContractInfo()));
 
   app.post("/agents", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);

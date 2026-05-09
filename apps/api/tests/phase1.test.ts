@@ -188,6 +188,28 @@ describe("Phase 1 protocol core", () => {
     );
   });
 
+  test("exposes the integrated Solana Anchor contract boundary", async () => {
+    const { app } = createApp();
+    const response = await get(app, "/settlement/solana");
+
+    expect(response).toMatchObject({
+      settlement_mode: "mock",
+      configured_settlement_adapter: "mock",
+      program_id: "292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv",
+      cluster: "localnet",
+      rpc_url: "http://127.0.0.1:8899",
+      contract_path: "contracts/solana",
+      frontend_helper: "contracts/solana/app/omniclawClient.ts",
+      anchor_commands: {
+        build: "bun run chain:build",
+        test: "bun run chain:test",
+        typecheck: "bun run chain:typecheck",
+      },
+    });
+    expect(response.instructions).toEqual(["register_agent", "create_job", "submit_work", "complete_job", "cancel_job", "slash_agent"]);
+    expect(response.job_statuses).toContainEqual({ value: 2, label: "completed", api_status: "completed" });
+  });
+
   test("enforces worker and hirer authorization rules", async () => {
     const { store, taskDeps, hirer, worker, weaker, skill } = await fixture();
     await expect(registerSkill(store, { wallet: "wallet_intruder" }, worker.id, {

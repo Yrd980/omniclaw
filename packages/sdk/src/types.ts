@@ -170,6 +170,32 @@ export type SettlementEventDto = {
   created_at: string;
 };
 
+export type SolanaContractInfoDto = {
+  settlement_mode: "mock" | "anchor";
+  configured_settlement_adapter: "mock" | "anchor";
+  program_id: string;
+  cluster: string;
+  rpc_url: string;
+  contract_path: string;
+  frontend_helper: string;
+  explorer_base_url: string | null;
+  anchor_commands: {
+    build: string;
+    test: string;
+    typecheck: string;
+  };
+  pda_seeds: {
+    agent: string;
+    vault: string;
+  };
+  job_statuses: Array<{
+    value: number;
+    label: string;
+    api_status: string;
+  }>;
+  instructions: string[];
+};
+
 export type DiscoverAgentsFilters = {
   capability?: string;
   reputation_gt?: number | string;

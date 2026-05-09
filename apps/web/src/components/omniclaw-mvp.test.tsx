@@ -45,6 +45,7 @@ describe("OmniClaw web MVP", () => {
     await client.resolveTask(createdTask.task_id, { resolution: "completed", quality_score: 92, review_score: 5 }, { agentId: hirer.agent_id });
     const detail = await client.getTaskDetail(createdTask.task_id);
     const graph = await client.getTaskGraph(createdTask.task_id);
+    const solana = await client.getSolanaContractInfo();
     const ui = render(<OmniClawMvp client={client} />);
 
     expect((await ui.findAllByText(worker.name, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
@@ -56,6 +57,8 @@ describe("OmniClaw web MVP", () => {
     expect(detail.settlement_events.some((event) => event.event_type === "worker_paid")).toBe(true);
     expect(detail.reputation_events.length).toBe(1);
     expect(graph.nodes[0]?.taskId).toBe(createdTask.task_id);
+    expect(solana.program_id).toBe("292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv");
+    expect(await ui.findByText("Anchor-ready mock mode")).toBeTruthy();
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
   });
 
@@ -69,6 +72,27 @@ describe("OmniClaw web MVP", () => {
         throw new OmniClawApiError(404, "NOT_FOUND", "task missing", null, "/tasks/task_missing");
       },
       getTaskGraph: async () => ({ rootTaskId: "task_missing", nodes: [], edges: [] }),
+      getSolanaContractInfo: async () => ({
+        settlement_mode: "mock",
+        configured_settlement_adapter: "mock",
+        program_id: "292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv",
+        cluster: "localnet",
+        rpc_url: "http://127.0.0.1:8899",
+        contract_path: "contracts/solana",
+        frontend_helper: "contracts/solana/app/omniclawClient.ts",
+        explorer_base_url: null,
+        anchor_commands: {
+          build: "bun run chain:build",
+          test: "bun run chain:test",
+          typecheck: "bun run chain:typecheck",
+        },
+        pda_seeds: {
+          agent: "[\"agent\", owner]",
+          vault: "[\"vault\", job_account]",
+        },
+        job_statuses: [],
+        instructions: [],
+      }),
     } as unknown as ReturnType<typeof createOmniClawClient>;
     const ui = render(<OmniClawMvp client={failingClient} />);
 

@@ -115,6 +115,28 @@ Event timelines:
 ```text
 GET /tasks/{task_id}/settlement-events
 GET /settlement-events?task_id=task_xxx
+GET /settlement/solana
 GET /reputation-events?agent_id=agent_worker
 GET /reputation-events?task_id=task_xxx
 ```
+
+`GET /settlement/solana` returns the integrated Anchor contract boundary:
+
+```json
+{
+  "settlement_mode": "mock",
+  "configured_settlement_adapter": "mock",
+  "program_id": "292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv",
+  "cluster": "localnet",
+  "rpc_url": "http://127.0.0.1:8899",
+  "contract_path": "contracts/solana",
+  "frontend_helper": "contracts/solana/app/omniclawClient.ts",
+  "anchor_commands": {
+    "build": "bun run chain:build",
+    "test": "bun run chain:test",
+    "typecheck": "bun run chain:typecheck"
+  }
+}
+```
+
+`settlement_mode` is the currently active API settlement path. Until a signer-backed adapter exists, it remains `mock` even when the contract is built and available for local Anchor tests.

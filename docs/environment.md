@@ -57,7 +57,20 @@ PORT=3002 bun --cwd apps/api dev
 NEXT_PUBLIC_OMNICLAW_API_URL=http://localhost:3002 bun --cwd apps/web dev
 ```
 
-The web app includes one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or onchain Solana settlement.
+The web app includes one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or live onchain settlement.
+
+Solana contract workflow:
+
+```sh
+bun install
+bun run chain:build
+bun run chain:test
+bun run chain:typecheck
+```
+
+Run `chain:build` before `chain:typecheck`; the helper and tests import Anchor-generated types from `contracts/solana/target/types`.
+
+The imported Anchor project lives in `contracts/solana`. It contains the escrow/reputation program, `tests/omniclaw.ts` for the onchain create -> lock -> submit -> complete/slash/cancel loop, and `app/omniclawClient.ts` for wallet-side calls. The API exposes this chain boundary at `GET /settlement/solana`, and the web console renders the same metadata in the settlement panel. The default API path still uses the mock settlement adapter. `OMNICLAW_SETTLEMENT_ADAPTER=anchor` is reported as a configured adapter request for future wiring, but it does not make API task settlement signer-backed until an Anchor settlement adapter is implemented.
 
 Python runtime workflow:
 

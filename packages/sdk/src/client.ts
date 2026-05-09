@@ -13,6 +13,7 @@ import type {
   ReputationEventDto,
   ResolveTaskInput,
   SettlementEventDto,
+  SolanaContractInfoDto,
   SkillDto,
   SubmitResultInput,
   TaskDetailDto,
@@ -100,6 +101,10 @@ export class OmniClawClient {
 
   listSettlementEvents(filters: Pick<EventFilters, "task_id"> = {}, actor?: ActorHeaders): Promise<{ settlement_events: SettlementEventDto[] }> {
     return this.request("GET", `/settlement-events${query(filters)}`, undefined, actor);
+  }
+
+  getSolanaContractInfo(actor?: ActorHeaders): Promise<SolanaContractInfoDto> {
+    return this.request("GET", "/settlement/solana", undefined, actor);
   }
 
   listReputationEvents(filters: EventFilters = {}, actor?: ActorHeaders): Promise<{ reputation_events: ReputationEventDto[] }> {

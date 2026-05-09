@@ -37,6 +37,7 @@ import {
   type ListTasksFilters,
   type ReputationEventDto,
   type SettlementEventDto,
+  type SolanaContractInfoDto,
   type TaskDetailDto,
   type TaskDto,
   type TaskGraphDto,
@@ -158,6 +159,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [detail, setDetail] = useState<TaskDetailDto | null>(null);
   const [graph, setGraph] = useState<TaskGraphDto | null>(null);
+  const [contractInfo, setContractInfo] = useState<SolanaContractInfoDto | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [paused, setPaused] = useState(false);
@@ -279,12 +281,16 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   }, [activeActor, client, loadTask, run]);
 
   const refreshData = useCallback(async () => {
-    const [discovery, taskList] = await Promise.all([
+    const [discovery, taskList, solanaInfo] = await Promise.all([
       run("discovery", () => client.discoverAgents(cleanFilters(filters), activeActor)),
       run("tasks", () => client.listTasks(cleanTaskFilters(taskFilters), activeActor)),
+      run("solana", () => client.getSolanaContractInfo(activeActor)),
     ]);
     if (discovery) {
       setResults(discovery.results);
+    }
+    if (solanaInfo) {
+      setContractInfo(solanaInfo);
     }
     if (taskList) {
       setTasks(taskList.tasks);
@@ -380,6 +386,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             <div className="flex flex-wrap items-center gap-2">
               <Signal icon={<Network size={15} />} label="agents" value={String(agents.length)} />
               <Signal icon={<GitBranch size={15} />} label="tasks" value={String(tasks.length)} />
+              <Signal icon={<ShieldCheck size={15} />} label="settlement" value={contractInfo?.settlement_mode ?? "mock"} />
               <Signal icon={<BadgeDollarSign size={15} />} label="volume" value={formatLamports(market.totalPayment)} />
               <Button variant="secondary" onClick={() => setPaused((current) => !current)} icon={paused ? <Play size={16} /> : <Pause size={16} />}>{paused ? "Play" : "Pause"}</Button>
             </div>
@@ -432,6 +439,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
         </section>
 
         <aside className="grid gap-4">
+          <SettlementPanel info={contractInfo} />
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
         </aside>
       </div>
@@ -579,6 +587,42 @@ function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDt
         <pre className="max-h-[320px] overflow-auto p-4 text-xs">{JSON.stringify(detail ?? task, null, 2)}</pre>
       </section>
     </>
+  );
+}
+
+function SettlementPanel({ info }: { info: SolanaContractInfoDto | null }) {
+  return (
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">settlement contract</div>
+          <h2 className="mt-1 text-base font-semibold">{info?.settlement_mode === "anchor" ? "Anchor adapter" : "Anchor-ready mock mode"}</h2>
+        </div>
+        <ShieldCheck size={17} className="text-[var(--accent)]" />
+      </div>
+      {info ? (
+        <div className="grid gap-3 p-4">
+          <Metric label="program_id" value={info.program_id} />
+          <div className="grid grid-cols-2 gap-3">
+            <Metric label="cluster" value={info.cluster} />
+            <Metric label="mode" value={info.settlement_mode} />
+          </div>
+          <Metric label="configured_adapter" value={info.configured_settlement_adapter} />
+          <Metric label="contract_path" value={info.contract_path} />
+          <Metric label="helper" value={info.frontend_helper} />
+          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+            <div className="mb-2 text-xs font-medium text-[var(--muted)]">anchor commands</div>
+            <div className="grid gap-1 font-mono text-xs">
+              <span>{info.anchor_commands.build}</span>
+              <span>{info.anchor_commands.test}</span>
+              <span>{info.anchor_commands.typecheck}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="p-4 text-sm text-[var(--muted)]">Solana contract metadata loads from the API settlement boundary.</div>
+      )}
+    </section>
   );
 }
 

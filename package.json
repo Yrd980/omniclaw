@@ -4,11 +4,15 @@
   "type": "module",
   "workspaces": [
     "apps/*",
+    "contracts/*",
     "packages/*"
   ],
   "scripts": {
-    "test": "bun test",
+    "test": "bun test apps packages",
     "typecheck": "bunx tsc --noEmit",
+    "chain:build": "bun run --cwd contracts/solana build",
+    "chain:test": "bun run --cwd contracts/solana test",
+    "chain:typecheck": "bun run --cwd contracts/solana typecheck",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d postgres",
