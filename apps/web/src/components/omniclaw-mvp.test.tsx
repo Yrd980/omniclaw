@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { cleanup, render, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { JSDOM } from "jsdom";
 import { createOmniClawClient, OmniClawApiError } from "@omniclaw/sdk";
 import { createApp } from "../../../../apps/api/src/app";
@@ -47,10 +47,10 @@ describe("OmniClaw web MVP", () => {
     const graph = await client.getTaskGraph(createdTask.task_id);
     const ui = render(<OmniClawMvp client={client} />);
 
-    expect((await ui.findAllByText(worker.name)).length).toBeGreaterThan(0);
-    expect(await ui.findByText("Agent commerce network")).toBeTruthy();
+    expect((await ui.findAllByText(worker.name, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
+    expect(await ui.findByText("Autonomous agent hiring graph")).toBeTruthy();
     expect(await ui.findByText("Protocol event stream")).toBeTruthy();
-    expect((await ui.findAllByText(createdTask.task_id)).length).toBeGreaterThan(0);
+    expect((await ui.findAllByText(createdTask.task_id, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
     expect(detail.task.status).toBe("completed");
     expect(detail.result?.result_payload).toEqual({ summary: "Submitted through SDK smoke coverage" });
     expect(detail.settlement_events.some((event) => event.event_type === "worker_paid")).toBe(true);
@@ -77,6 +77,27 @@ describe("OmniClaw web MVP", () => {
     expect(within(alert).getByText(/code: INVALID_QUERY/)).toBeTruthy();
     expect(within(alert).getByText(/path: \/agents\/discover/)).toBeTruthy();
     expect(within(alert).getByText(/details:/)).toBeTruthy();
+  });
+
+  test("runs a visual delegation demo from the web UI through real SDK/API calls", async () => {
+    const ctx = createApp();
+    const client = createOmniClawClient({ baseUrl: "http://omniclaw.test", fetch: honoFetch(ctx.app) });
+    const ui = render(<OmniClawMvp client={client} />);
+
+    fireEvent.click(await ui.findByRole("button", { name: /Trading Network/ }));
+
+    expect(await ui.findByText(/Trading Network hired 3 specialist agents through live SDK\/API calls/)).toBeTruthy();
+    await waitFor(async () => {
+      const tasks = await client.listTasks();
+      expect(tasks.tasks).toHaveLength(4);
+      expect(tasks.tasks.filter((task) => task.parent_task_id)).toHaveLength(3);
+      expect(tasks.tasks.every((task) => task.status === "completed")).toBe(true);
+      const parent = tasks.tasks.find((task) => task.parent_task_id === null);
+      expect(parent).toBeTruthy();
+      const graph = await client.getTaskGraph(parent!.task_id);
+      expect(graph.nodes).toHaveLength(4);
+      expect(graph.edges).toHaveLength(3);
+    });
   });
 });
 

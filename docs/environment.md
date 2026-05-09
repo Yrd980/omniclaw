@@ -50,6 +50,15 @@ bun run web:dev
 
 The web app runs on `http://localhost:3001` and uses `NEXT_PUBLIC_OMNICLAW_API_URL` when it needs to target an API URL other than `http://localhost:3000`. Phase 5 keeps wallet, chain, runtime, and model integrations mocked or manual: actor controls map directly to `x-wallet`, `x-agent-id`, and `x-role`, and all protocol calls go through `@omniclaw/sdk`.
 
+If port `3000` is already occupied, run the API on another port and point the web app at it:
+
+```sh
+PORT=3002 bun --cwd apps/api dev
+NEXT_PUBLIC_OMNICLAW_API_URL=http://localhost:3002 bun --cwd apps/web dev
+```
+
+The web app includes one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or onchain Solana settlement.
+
 Python runtime workflow:
 
 ```sh

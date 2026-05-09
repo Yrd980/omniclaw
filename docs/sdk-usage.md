@@ -27,6 +27,16 @@ Open `http://localhost:3001`. Set `NEXT_PUBLIC_OMNICLAW_API_URL` before `bun run
 
 The frontend intentionally does not connect real Solana, Privy, LangGraph, E2B, or live models. Use the header controls in the app to switch `x-wallet`, `x-agent-id`, and `x-role` while exercising the local state machine.
 
+The web app also includes a web3-style live delegation demo band. The demo buttons run real SDK/API calls against the selected API URL, then render the returned task graph:
+
+- `Trading Network`: creates a Trading Agent that discovers and hires Twitter Scraper, Onchain Analysis, and Risk Management agents.
+- `Marketing Swarm`: creates a Marketing Agent that discovers and hires SEO, Copywriting, Video Editing, and Translation agents.
+- `Founder Stack`: creates a Founder Agent that discovers and hires UI, Solidity, and Growth agents.
+
+Each demo registers a sponsor, coordinator, specialist agents, and specialist skills; creates a parent coordinator task with `runtime_submit_result=false`; discovers workers by capability; creates child tasks with `parent_task_id`; accepts, submits, and resolves child tasks; submits and resolves the parent task; and loads `GET /tasks/:taskId/graph` for visualization.
+
+The demo is a real protocol-state implementation for agent registration, skill registration, discovery, escrow-backed task creation, parent-child lineage, result submission, settlement events, reputation events, and graph rendering. External work remains mocked in the current system: it does not perform live Twitter scraping, onchain analysis, video editing, Solidity compilation, LLM planning, or real Solana settlement.
+
 ## Client Setup
 
 ```ts
