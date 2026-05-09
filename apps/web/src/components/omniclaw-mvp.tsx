@@ -1,27 +1,39 @@
 "use client";
 
-import { Background, Controls, ReactFlow, type Edge, type Node } from "@xyflow/react";
-import { AlertTriangle, Check, CircleDollarSign, GitBranch, Plus, RefreshCw, Search, Send, ShieldCheck, X } from "lucide-react";
+import { Background, Controls, MiniMap, ReactFlow, type Edge, type Node } from "@xyflow/react";
+import {
+  Activity,
+  AlertTriangle,
+  BadgeDollarSign,
+  Circle,
+  CircleDot,
+  GitBranch,
+  Network,
+  Pause,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  Timer,
+  Zap,
+} from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   createOmniClawClient,
   OmniClawApiError,
   type ActorHeaders,
   type AgentDto,
   type AgentStatus,
-  type CreateTaskInput,
   type DiscoverAgentsFilters,
   type DiscoveryResultDto,
   type ListTasksFilters,
-  type RegisterAgentInput,
-  type RegisterSkillInput,
-  type ResolveTaskInput,
-  type SkillDto,
+  type ReputationEventDto,
+  type SettlementEventDto,
   type TaskDetailDto,
   type TaskDto,
   type TaskGraphDto,
@@ -40,60 +52,61 @@ type ApiIssue = {
   details?: unknown;
 };
 
-const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
+type ViewMode = "all" | "network" | "lifecycle" | "market" | "lineage";
+type EventItem = {
+  id: string;
+  taskId: string;
+  kind: "settlement" | "reputation";
+  label: string;
+  value: string;
+  tone: StatusTone;
+  timestamp: string;
+};
+type StatusTone = "neutral" | "info" | "success" | "warning" | "danger";
 
+const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
 const AGENT_STATUSES: AgentStatus[] = ["active", "paused", "suspended"];
 const TASK_STATUSES: TaskStatus[] = ["created", "escrow_locked", "accepted", "in_progress", "submitted", "completed", "failed", "expired", "disputed", "cancelled"];
 const ROLE_OPTIONS: Array<NonNullable<ActorHeaders["role"]> | ""> = ["", "admin", "evaluator"];
+const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "network", label: "Network" },
+  { value: "lifecycle", label: "Lifecycle" },
+  { value: "market", label: "Market" },
+  { value: "lineage", label: "Lineage" },
+];
 
-const DEFAULT_AGENT: RegisterAgentInput = {
-  publisher_wallet: "wallet_operator",
-  name: "Market Research Agent",
-  description: "Finds specialist workers and coordinates research tasks.",
-  status: "active",
-  reputation_score: 88,
-  success_rate: 0.94,
-  avg_latency_ms: 5200,
-  quality_score: 90,
-  delegation_success_rate: 0.91,
-  historical_earnings_lamports: "142000000000",
-  stake_amount: "500000000",
+const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: StatusTone; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
+  active: { label: "active", tone: "success", icon: CircleDot },
+  paused: { label: "paused", tone: "warning", icon: Pause },
+  suspended: { label: "suspended", tone: "danger", icon: AlertTriangle },
+  created: { label: "created", tone: "neutral", icon: Circle },
+  escrow_locked: { label: "escrow locked", tone: "info", icon: ShieldCheck },
+  accepted: { label: "accepted", tone: "info", icon: CircleDot },
+  in_progress: { label: "in progress", tone: "warning", icon: Activity },
+  submitted: { label: "submitted", tone: "warning", icon: Zap },
+  completed: { label: "completed", tone: "success", icon: ShieldCheck },
+  failed: { label: "failed", tone: "danger", icon: AlertTriangle },
+  expired: { label: "expired", tone: "danger", icon: Timer },
+  disputed: { label: "disputed", tone: "warning", icon: AlertTriangle },
+  cancelled: { label: "cancelled", tone: "danger", icon: Circle },
 };
 
-const DEFAULT_SKILL: RegisterSkillInput & { agent_id: string } = {
-  agent_id: "",
-  name: "market_research",
-  description: "Collects, analyzes, and summarizes market data.",
-  input_schema: { type: "object", properties: { topic: { type: "string" } }, required: ["topic"] },
-  output_schema: { type: "object", properties: { summary: { type: "string" } }, required: ["summary"] },
-  base_price_lamports: "50000000",
-  estimated_latency_ms: 10000,
-  required_permissions: ["web_access"],
-};
-
-const DEFAULT_RESULT = {
-  result_payload: { summary: "Completed from the local MVP console." },
-  artifacts: [],
-};
+const LIFECYCLE: TaskStatus[] = ["created", "escrow_locked", "accepted", "in_progress", "submitted", "completed"];
 
 export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [apiUrl, setApiUrl] = useState(API_URL);
   const client = useMemo(() => injectedClient ?? createOmniClawClient({ baseUrl: apiUrl }), [apiUrl, injectedClient]);
   const [actor, setActor] = useState<ActorHeaders>({ wallet: "wallet_operator", agentId: "", role: undefined });
-  const [filters, setFilters] = useState<DiscoverAgentsFilters>({ capability: "", status: "active" });
-  const [results, setResults] = useState<DiscoveryResultDto[]>([]);
-  const [selected, setSelected] = useState<DiscoveryResultDto | null>(null);
-  const [agentForm, setAgentForm] = useState(DEFAULT_AGENT);
-  const [skillForm, setSkillForm] = useState(DEFAULT_SKILL);
-  const [registeredAgents, setRegisteredAgents] = useState<AgentDto[]>([]);
-  const [registeredSkills, setRegisteredSkills] = useState<SkillDto[]>([]);
-  const [taskForm, setTaskForm] = useState(() => defaultTaskForm());
+  const [filters, setFilters] = useState<DiscoverAgentsFilters>({ capability: "market_research", status: "active" });
   const [taskFilters, setTaskFilters] = useState<ListTasksFilters>({});
+  const [results, setResults] = useState<DiscoveryResultDto[]>([]);
   const [tasks, setTasks] = useState<TaskDto[]>([]);
   const [detail, setDetail] = useState<TaskDetailDto | null>(null);
   const [graph, setGraph] = useState<TaskGraphDto | null>(null);
-  const [resultJson, setResultJson] = useState(JSON.stringify(DEFAULT_RESULT, null, 2));
-  const [resolution, setResolution] = useState<ResolveTaskInput>({ resolution: "completed", quality_score: 92, review_score: 5 });
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [paused, setPaused] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [issue, setIssue] = useState<ApiIssue | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -103,7 +116,6 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const run = useCallback(async <T,>(label: string, action: () => Promise<T>) => {
     setBusy(label);
     setIssue(null);
-    setNotice(null);
     try {
       return await action();
     } catch (error) {
@@ -114,24 +126,8 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
     }
   }, []);
 
-  const refreshDiscovery = useCallback(async () => {
-    const response = await run("discovery", () => client.discoverAgents(cleanFilters(filters), activeActor));
-    if (response) {
-      setResults(response.results);
-      if (!selected && response.results[0]) {
-        selectResult(response.results[0]);
-      }
-    }
-  }, [activeActor, client, filters, run, selected]);
-
-  const refreshTasks = useCallback(async () => {
-    const response = await run("tasks", () => client.listTasks(cleanTaskFilters(taskFilters), activeActor));
-    if (response) {
-      setTasks(response.tasks);
-    }
-  }, [activeActor, client, run, taskFilters]);
-
-  const loadDetail = useCallback(async (taskId: string) => {
+  const loadTask = useCallback(async (taskId: string) => {
+    setSelectedTaskId(taskId);
     const response = await run("detail", () => client.getTaskDetail(taskId, activeActor));
     if (response) {
       setDetail(response);
@@ -142,432 +138,325 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
     }
   }, [activeActor, client, run]);
 
-  useEffect(() => {
-    void refreshDiscovery();
-  }, []);
-
-  useEffect(() => {
-    void refreshTasks();
-  }, []);
-
-  const selectResult = (result: DiscoveryResultDto) => {
-    setSelected(result);
-    setTaskForm((current) => ({
-      ...current,
-      worker_agent_id: result.agent.agent_id,
-      skill_id: result.skill.skill_id,
-      payment_lamports: result.skill.base_price_lamports,
-    }));
-    setSkillForm((current) => ({ ...current, agent_id: result.agent.agent_id }));
-  };
-
-  const registerAgent = async () => {
-    const agent = await run("register-agent", () => client.registerAgent(agentForm, { ...activeActor, wallet: agentForm.publisher_wallet }));
-    if (agent) {
-      setRegisteredAgents((current) => [agent, ...current]);
-      setActor((current) => ({ ...current, wallet: agent.publisher_wallet, agentId: current.agentId || agent.agent_id }));
-      setSkillForm((current) => ({ ...current, agent_id: agent.agent_id }));
-      setNotice(`Registered ${agent.agent_id}`);
+  const refreshData = useCallback(async () => {
+    const [discovery, taskList] = await Promise.all([
+      run("discovery", () => client.discoverAgents(cleanFilters(filters), activeActor)),
+      run("tasks", () => client.listTasks(cleanTaskFilters(taskFilters), activeActor)),
+    ]);
+    if (discovery) {
+      setResults(discovery.results);
     }
-  };
-
-  const registerSkill = async () => {
-    const { agent_id, ...input } = skillForm;
-    const skill = await run("register-skill", () => client.registerSkill(agent_id, input, { ...activeActor, wallet: actor.wallet || agentForm.publisher_wallet }));
-    if (skill) {
-      setRegisteredSkills((current) => [skill, ...current]);
-      setNotice(`Registered ${skill.skill_id}`);
-      await refreshDiscovery();
-    }
-  };
-
-  const createTask = async () => {
-    const parsed = parseObject(taskForm.task_payload, "task_payload");
-    if (!parsed.ok) {
-      setIssue(parsed.issue);
-      return;
-    }
-    const input: CreateTaskInput = {
-      parent_task_id: taskForm.parent_task_id || null,
-      hirer_agent_id: taskForm.hirer_agent_id,
-      worker_agent_id: taskForm.worker_agent_id,
-      skill_id: taskForm.skill_id,
-      task_payload: parsed.value,
-      payment_lamports: taskForm.payment_lamports,
-      deadline: taskForm.deadline,
-    };
-    const task = await run("create-task", () => client.createTask(input, { ...activeActor, agentId: input.hirer_agent_id }));
-    if (task) {
-      setNotice(`Created ${task.task_id} with ${task.status} escrow state`);
-      setActor((current) => ({ ...current, agentId: input.hirer_agent_id }));
-      await refreshTasks();
-      await loadDetail(task.task_id);
-    }
-  };
-
-  const taskAction = async (kind: "accept" | "reject" | "expire" | "submit" | "resolve") => {
-    if (!detail) {
-      return;
-    }
-    const id = detail.task.task_id;
-    if (kind === "accept") {
-      await run("accept", () => client.acceptTask(id, { ...activeActor, agentId: detail.task.worker_agent_id }));
-    }
-    if (kind === "reject") {
-      await run("reject", () => client.rejectTask(id, { ...activeActor, agentId: detail.task.worker_agent_id }));
-    }
-    if (kind === "expire") {
-      await run("expire", () => client.expireTask(id, { ...activeActor, role: actor.role || "admin" }));
-    }
-    if (kind === "submit") {
-      const parsed = parseObject(resultJson, "result_payload");
-      if (!parsed.ok) {
-        setIssue(parsed.issue);
-        return;
+    if (taskList) {
+      setTasks(taskList.tasks);
+      const taskId = selectedTaskId ?? taskList.tasks[0]?.task_id ?? null;
+      if (taskId) {
+        await loadTask(taskId);
+      } else {
+        setDetail(null);
+        setGraph(null);
       }
-      const artifacts = Array.isArray(parsed.value.artifacts) ? parsed.value.artifacts : [];
-      const result_payload = typeof parsed.value.result_payload === "object" && parsed.value.result_payload !== null && !Array.isArray(parsed.value.result_payload)
-        ? parsed.value.result_payload as Record<string, unknown>
-        : parsed.value;
-      await run("submit", () => client.submitResult(id, { result_payload, artifacts }, { ...activeActor, agentId: detail.task.worker_agent_id }));
+      setNotice(`Visualized ${discovery?.results.length ?? results.length} agents and ${taskList.tasks.length} tasks`);
     }
-    if (kind === "resolve") {
-      await run("resolve", () => client.resolveTask(id, resolution, { ...activeActor, agentId: detail.task.hirer_agent_id }));
-    }
-    await refreshTasks();
-    await loadDetail(id);
-  };
+  }, [activeActor, client, filters, loadTask, results.length, run, selectedTaskId, taskFilters]);
 
-  const flowNodes = useMemo<Node[]>(() => {
-    if (!graph) {
-      return [];
-    }
-    return graph.nodes.map((node, index) => ({
-      id: node.taskId,
-      position: { x: 40 + (index % 3) * 300, y: 40 + Math.floor(index / 3) * 170 },
-      data: {
-        label: (
-          <div className="min-w-[230px] rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-left shadow-sm">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="font-mono text-xs">{node.taskId}</span>
-              <StatusBadge status={node.status} />
-            </div>
-            <div className="space-y-1 text-xs text-[var(--muted)]">
-              <div>worker: {node.workerAgentId}</div>
-              <div>payment: {formatLamports(node.paymentLamports)}</div>
-              <div>payout: {formatLamports(node.workerPayoutLamports)}</div>
-              <div>deadline: {formatDate(node.deadline)}</div>
-            </div>
-          </div>
-        ),
-      },
-      type: "default",
-    }));
-  }, [graph]);
+  useEffect(() => {
+    void refreshData();
+  }, []);
 
-  const flowEdges = useMemo<Edge[]>(() => graph?.edges.map((edge) => ({
-    id: `${edge.from}-${edge.to}`,
-    source: edge.from,
-    target: edge.to,
-    animated: true,
-  })) ?? [], [graph]);
+  const agents = useMemo(() => uniqueAgents(results), [results]);
+  const events = useMemo(() => collectEvents(detail), [detail]);
+  const market = useMemo(() => buildMarketSignals(results, tasks), [results, tasks]);
+  const activeTask = detail?.task ?? tasks.find((task) => task.task_id === selectedTaskId) ?? null;
+  const activeStatusIndex = activeTask ? lifecycleIndex(activeTask.status) : -1;
+  const flow = useMemo(() => buildFlow(agents, results, tasks, graph, selectedTaskId, viewMode), [agents, graph, results, selectedTaskId, tasks, viewMode]);
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <header className="border-b border-[var(--border)] bg-[var(--panel)]">
-        <div className="mx-auto flex max-w-[1520px] flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)_auto] xl:items-center">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">OmniClaw MVP</div>
-            <h1 className="mt-1 text-2xl font-semibold">Marketplace and task console</h1>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">OmniClaw protocol visualization</div>
+            <h1 className="mt-1 text-xl font-semibold">Agent commerce network</h1>
           </div>
-          <div className="grid gap-2 sm:grid-cols-4 lg:w-[760px]">
-            <Field label="API URL">
+          <div className="grid gap-2 md:grid-cols-4">
+            <Field label="api">
               <Input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} disabled={Boolean(injectedClient)} />
             </Field>
-            <Field label="x-wallet">
-              <Input value={actor.wallet ?? ""} onChange={(event) => setActor({ ...actor, wallet: event.target.value })} />
+            <Field label="capability">
+              <Input value={filters.capability ?? ""} onChange={(event) => setFilters({ ...filters, capability: event.target.value })} />
             </Field>
-            <Field label="x-agent-id">
-              <Input value={actor.agentId ?? ""} onChange={(event) => setActor({ ...actor, agentId: event.target.value })} />
-            </Field>
-            <Field label="x-role">
-              <Select value={actor.role ?? ""} onChange={(event) => setActor({ ...actor, role: event.target.value ? event.target.value as ActorHeaders["role"] : undefined })}>
-                {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role || "none"}</option>)}
+            <Field label="agent status">
+              <Select value={filters.status ?? ""} onChange={(event) => setFilters({ ...filters, status: event.target.value as AgentStatus || undefined })}>
+                <option value="">any</option>
+                {AGENT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
               </Select>
             </Field>
+            <Field label="task status">
+              <Select value={taskFilters.status ?? ""} onChange={(event) => setTaskFilters({ ...taskFilters, status: event.target.value as TaskStatus || undefined })}>
+                <option value="">any</option>
+                {TASK_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <Select aria-label="actor role" value={actor.role ?? ""} onChange={(event) => setActor({ ...actor, role: event.target.value ? event.target.value as ActorHeaders["role"] : undefined })} className="w-[120px]">
+              {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role || "observer"}</option>)}
+            </Select>
+            <Button onClick={refreshData} busy={busy === "discovery" || busy === "tasks"} icon={<RefreshCw size={16} />}>Refresh</Button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1520px] gap-5 px-5 py-5 xl:grid-cols-[minmax(0,1.12fr)_minmax(420px,0.88fr)]">
-        <section className="space-y-5">
-          <Panel title="Discovery" action={<Button onClick={refreshDiscovery} busy={busy === "discovery"} icon={<Search size={16} />}>Search</Button>}>
-            <div className="grid gap-3 md:grid-cols-5">
-              <Field label="capability">
-                <Input value={filters.capability ?? ""} onChange={(event) => setFilters({ ...filters, capability: event.target.value })} placeholder="market_research" />
-              </Field>
-              <Field label="status">
-                <Select value={filters.status ?? ""} onChange={(event) => setFilters({ ...filters, status: event.target.value as AgentStatus || undefined })}>
-                  <option value="">any</option>
-                  {AGENT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-                </Select>
-              </Field>
-              <Field label="reputation_gt">
-                <Input value={filters.reputation_gt ?? ""} onChange={(event) => setFilters({ ...filters, reputation_gt: event.target.value })} />
-              </Field>
-              <Field label="latency_lt_ms">
-                <Input value={filters.latency_lt_ms ?? ""} onChange={(event) => setFilters({ ...filters, latency_lt_ms: event.target.value })} />
-              </Field>
-              <Field label="max_price_lamports">
-                <Input value={filters.max_price_lamports ?? ""} onChange={(event) => setFilters({ ...filters, max_price_lamports: event.target.value })} />
-              </Field>
+      <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <section className="min-h-[calc(100vh-112px)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+            <SegmentedControl value={viewMode} onChange={setViewMode} />
+            <div className="flex flex-wrap items-center gap-2">
+              <Signal icon={<Network size={15} />} label="agents" value={String(agents.length)} />
+              <Signal icon={<GitBranch size={15} />} label="tasks" value={String(tasks.length)} />
+              <Signal icon={<BadgeDollarSign size={15} />} label="volume" value={formatLamports(market.totalPayment)} />
+              <Button variant="secondary" onClick={() => setPaused((current) => !current)} icon={paused ? <Play size={16} /> : <Pause size={16} />}>{paused ? "Play" : "Pause"}</Button>
             </div>
+          </div>
 
-            <div className="mt-4 overflow-x-auto rounded-md border border-[var(--border)]">
-              <table className="w-full min-w-[920px] border-collapse text-sm">
-                <thead className="bg-[var(--panel-strong)] text-left text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
-                  <tr>
-                    <Th>agent</Th>
-                    <Th>skill</Th>
-                    <Th>rank</Th>
-                    <Th>reputation</Th>
-                    <Th>latency</Th>
-                    <Th>price</Th>
-                    <Th>action</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((result) => (
-                    <tr key={`${result.agent.agent_id}-${result.skill.skill_id}`} className="border-t border-[var(--border)]">
-                      <Td>
-                        <div className="font-medium">{result.agent.name}</div>
-                        <div className="font-mono text-xs text-[var(--muted)]">{result.agent.agent_id}</div>
-                      </Td>
-                      <Td>
-                        <div>{result.skill.name}</div>
-                        <div className="text-xs text-[var(--muted)]">{result.skill.description}</div>
-                      </Td>
-                      <Td>
-                        <div className="font-medium">{result.ranking.score.toFixed(2)}</div>
-                        <div className="text-xs text-[var(--muted)]">match {result.ranking.skillMatch.toFixed(2)} · price {result.ranking.price.toFixed(2)}</div>
-                      </Td>
-                      <Td>{result.agent.reputation_score}</Td>
-                      <Td>{result.skill.estimated_latency_ms} ms</Td>
-                      <Td>{formatLamports(result.skill.base_price_lamports)}</Td>
-                      <Td><Button variant="secondary" onClick={() => selectResult(result)}>Select</Button></Td>
-                    </tr>
-                  ))}
-                  {results.length === 0 && <EmptyRow columns={7} text="No agents discovered yet. Register an agent and skill, then search." />}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
-
-          <Panel title="Register agent and skill" action={<Button onClick={registerAgent} busy={busy === "register-agent"} icon={<Plus size={16} />}>Agent</Button>}>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="grid gap-3">
-                <Field label="publisher_wallet">
-                  <Input value={agentForm.publisher_wallet} onChange={(event) => setAgentForm({ ...agentForm, publisher_wallet: event.target.value })} />
-                </Field>
-                <Field label="name">
-                  <Input value={agentForm.name} onChange={(event) => setAgentForm({ ...agentForm, name: event.target.value })} />
-                </Field>
-                <Field label="description">
-                  <Textarea value={agentForm.description} onChange={(event) => setAgentForm({ ...agentForm, description: event.target.value })} />
-                </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="reputation_score"><Input type="number" value={agentForm.reputation_score ?? 0} onChange={(event) => setAgentForm({ ...agentForm, reputation_score: Number(event.target.value) })} /></Field>
-                  <Field label="avg_latency_ms"><Input type="number" value={agentForm.avg_latency_ms ?? 0} onChange={(event) => setAgentForm({ ...agentForm, avg_latency_ms: Number(event.target.value) })} /></Field>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                <Field label="agent_id for skill">
-                  <Input value={skillForm.agent_id} onChange={(event) => setSkillForm({ ...skillForm, agent_id: event.target.value })} />
-                </Field>
-                <Field label="skill name">
-                  <Input value={skillForm.name} onChange={(event) => setSkillForm({ ...skillForm, name: event.target.value })} />
-                </Field>
-                <Field label="skill description">
-                  <Textarea value={skillForm.description} onChange={(event) => setSkillForm({ ...skillForm, description: event.target.value })} />
-                </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="base_price_lamports"><Input value={skillForm.base_price_lamports} onChange={(event) => setSkillForm({ ...skillForm, base_price_lamports: event.target.value })} /></Field>
-                  <Field label="estimated_latency_ms"><Input type="number" value={skillForm.estimated_latency_ms} onChange={(event) => setSkillForm({ ...skillForm, estimated_latency_ms: Number(event.target.value) })} /></Field>
-                </div>
-                <Button onClick={registerSkill} busy={busy === "register-skill"} icon={<ShieldCheck size={16} />}>Register skill</Button>
-              </div>
-            </div>
-            {(registeredAgents.length > 0 || registeredSkills.length > 0) && (
-              <div className="mt-4 grid gap-2 text-xs text-[var(--muted)] sm:grid-cols-2">
-                <pre className="overflow-auto rounded-md bg-[var(--panel-strong)] p-3">{JSON.stringify(registeredAgents[0] ?? null, null, 2)}</pre>
-                <pre className="overflow-auto rounded-md bg-[var(--panel-strong)] p-3">{JSON.stringify(registeredSkills[0] ?? null, null, 2)}</pre>
-              </div>
-            )}
-          </Panel>
-
-          <Panel title="Create task" action={<Button onClick={createTask} busy={busy === "create-task"} icon={<CircleDollarSign size={16} />}>Create</Button>}>
-            {selected && (
-              <div className="mb-4 rounded-md border border-[var(--border)] bg-[var(--panel)] p-3 text-sm">
-                Selected worker: <b>{selected.agent.name}</b> · skill <b>{selected.skill.name}</b> · price {formatLamports(selected.skill.base_price_lamports)}
-              </div>
-            )}
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="hirer_agent_id"><Input aria-label="create hirer_agent_id" value={taskForm.hirer_agent_id} onChange={(event) => setTaskForm({ ...taskForm, hirer_agent_id: event.target.value })} /></Field>
-              <Field label="worker_agent_id"><Input aria-label="create worker_agent_id" value={taskForm.worker_agent_id} onChange={(event) => setTaskForm({ ...taskForm, worker_agent_id: event.target.value })} /></Field>
-              <Field label="skill_id"><Input aria-label="create skill_id" value={taskForm.skill_id} onChange={(event) => setTaskForm({ ...taskForm, skill_id: event.target.value })} /></Field>
-              <Field label="payment_lamports"><Input value={taskForm.payment_lamports} onChange={(event) => setTaskForm({ ...taskForm, payment_lamports: event.target.value })} /></Field>
-              <Field label="parent_task_id"><Input value={taskForm.parent_task_id} onChange={(event) => setTaskForm({ ...taskForm, parent_task_id: event.target.value })} /></Field>
-              <Field label="deadline"><Input type="datetime-local" value={toLocalDateTime(taskForm.deadline)} onChange={(event) => setTaskForm({ ...taskForm, deadline: new Date(event.target.value).toISOString() })} /></Field>
-              <Field label="payload JSON" className="md:col-span-2">
-                <Textarea rows={7} value={taskForm.task_payload} onChange={(event) => setTaskForm({ ...taskForm, task_payload: event.target.value })} />
-              </Field>
-            </div>
-          </Panel>
-        </section>
-
-        <section className="space-y-5">
           {(issue || notice) && <Feedback issue={issue} notice={notice} />}
 
-          <Panel title="Tasks" action={<Button onClick={refreshTasks} busy={busy === "tasks"} icon={<RefreshCw size={16} />}>Refresh</Button>}>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="worker_agent_id"><Input value={taskFilters.worker_agent_id ?? ""} onChange={(event) => setTaskFilters({ ...taskFilters, worker_agent_id: event.target.value || undefined })} /></Field>
-              <Field label="hirer_agent_id"><Input value={taskFilters.hirer_agent_id ?? ""} onChange={(event) => setTaskFilters({ ...taskFilters, hirer_agent_id: event.target.value || undefined })} /></Field>
-              <Field label="status">
-                <Select value={taskFilters.status ?? ""} onChange={(event) => setTaskFilters({ ...taskFilters, status: event.target.value as TaskStatus || undefined })}>
-                  <option value="">any</option>
-                  {TASK_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-                </Select>
-              </Field>
-            </div>
-            <div className="mt-4 max-h-[360px] overflow-auto rounded-md border border-[var(--border)]">
-              {tasks.map((task) => (
-                <button key={task.task_id} className="flex w-full items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-3 text-left text-sm hover:bg-[var(--panel)]" onClick={() => loadDetail(task.task_id)}>
-                  <span>
-                    <span className="block font-mono text-xs">{task.task_id}</span>
-                    <span className="text-xs text-[var(--muted)]">{task.worker_agent_id} · {formatLamports(task.payment_lamports)}</span>
-                  </span>
-                  <StatusBadge status={task.status} />
-                </button>
-              ))}
-              {tasks.length === 0 && <div className="p-4 text-sm text-[var(--muted)]">No tasks match the current filters.</div>}
-            </div>
-          </Panel>
-
-          <Panel title="Task detail" action={detail ? <span className="font-mono text-xs text-[var(--muted)]">{detail.task.task_id}</span> : null}>
-            {detail ? (
-              <div className="space-y-4">
-                <div className="grid gap-2 text-sm sm:grid-cols-2">
-                  <Metric label="status" value={<StatusBadge status={detail.task.status} />} />
-                  <Metric label="escrow" value={detail.task.escrow_account ?? "none"} />
-                  <Metric label="worker payout" value={formatLamports(detail.task.worker_payout_lamports)} />
-                  <Metric label="deadline" value={formatDate(detail.task.deadline)} />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" disabled={Boolean(busy)} onClick={() => taskAction("accept")} busy={busy === "accept"} icon={<Check size={16} />}>Accept</Button>
-                  <Button variant="secondary" disabled={Boolean(busy)} onClick={() => taskAction("submit")} busy={busy === "submit"} icon={<Send size={16} />}>Submit result</Button>
-                  <Button variant="secondary" disabled={Boolean(busy)} onClick={() => taskAction("resolve")} busy={busy === "resolve"} icon={<ShieldCheck size={16} />}>Resolve</Button>
-                  <Button variant="secondary" disabled={Boolean(busy)} onClick={() => taskAction("reject")} busy={busy === "reject"} icon={<X size={16} />}>Reject</Button>
-                  <Button variant="secondary" disabled={Boolean(busy)} onClick={() => taskAction("expire")} busy={busy === "expire"} icon={<AlertTriangle size={16} />}>Expire</Button>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="submitResult JSON">
-                    <Textarea rows={6} value={resultJson} onChange={(event) => setResultJson(event.target.value)} />
-                  </Field>
-                  <div className="grid gap-3">
-                    <Field label="resolution">
-                      <Select value={resolution.resolution} onChange={(event) => setResolution({ ...resolution, resolution: event.target.value as ResolveTaskInput["resolution"] })}>
-                        <option value="completed">completed</option>
-                        <option value="failed">failed</option>
-                        <option value="disputed">disputed</option>
-                      </Select>
-                    </Field>
-                    <Field label="quality_score"><Input type="number" value={resolution.quality_score ?? ""} onChange={(event) => setResolution({ ...resolution, quality_score: Number(event.target.value) })} /></Field>
-                    <Field label="review_score"><Input type="number" value={resolution.review_score ?? ""} onChange={(event) => setResolution({ ...resolution, review_score: Number(event.target.value) })} /></Field>
-                  </div>
-                </div>
-                <Timeline title="settlement_events" items={detail.settlement_events} />
-                <Timeline title="reputation_events" items={detail.reputation_events} />
-                <pre className="max-h-[320px] overflow-auto rounded-md bg-[var(--panel-strong)] p-3 text-xs">{JSON.stringify(detail, null, 2)}</pre>
-              </div>
-            ) : (
-              <div className="text-sm text-[var(--muted)]">Select a task to inspect detail, result, settlement events, and reputation events.</div>
-            )}
-          </Panel>
-
-          <Panel title="Task graph" action={<GitBranch size={16} className="text-[var(--muted)]" />}>
-            <div className="h-[430px] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--panel)]">
-              {graph && flowNodes.length > 0 ? (
-                <ReactFlow nodes={flowNodes} edges={flowEdges} fitView>
-                  <Background />
+          <div className="grid min-h-[720px] grid-rows-[minmax(360px,1fr)_auto] xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-none">
+            <div className="relative min-h-[420px]">
+              {flow.nodes.length > 0 ? (
+                <ReactFlow
+                  nodes={flow.nodes}
+                  edges={flow.edges}
+                  fitView
+                  onNodeClick={(_, node) => {
+                    if (node.type === "task" || String(node.id).startsWith("task:")) {
+                      void loadTask(String(node.id).replace(/^task:/, ""));
+                    }
+                  }}
+                >
+                  <Background color="var(--flow-grid)" gap={28} />
+                  <MiniMap pannable zoomable nodeColor={(node) => node.data?.tone ? toneColor(String(node.data.tone) as StatusTone) : toneColor("neutral")} />
                   <Controls />
                 </ReactFlow>
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">Graph appears after a task is selected.</div>
+                <EmptyVisualization />
               )}
             </div>
-          </Panel>
+
+            <aside className="border-t border-[var(--border)] bg-[var(--panel)] p-4 xl:border-l xl:border-t-0">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">market signals</div>
+                  <h2 className="mt-1 text-base font-semibold">Agent capability field</h2>
+                </div>
+                <Activity size={18} className={paused ? "text-[var(--muted)]" : "animate-pulse text-[var(--accent)]"} />
+              </div>
+              <div className="grid gap-3">
+                <MarketBar label="avg reputation" value={market.avgReputation} max={100} tone="success" />
+                <MarketBar label="avg quality" value={market.avgQuality} max={100} tone="info" />
+                <MarketBar label="success rate" value={market.avgSuccess * 100} max={100} tone="success" />
+                <MarketBar label="latency pressure" value={market.latencyPressure} max={100} tone="warning" />
+              </div>
+              <div className="mt-5 border-t border-[var(--border)] pt-4">
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">lifecycle rail</div>
+                <LifecycleRail activeIndex={activeStatusIndex} activeStatus={activeTask?.status ?? null} />
+              </div>
+            </aside>
+          </div>
         </section>
+
+        <aside className="grid gap-4">
+          <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
+        </aside>
       </div>
     </main>
   );
 }
 
-function Panel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function SegmentedControl({ value, onChange }: { value: ViewMode; onChange: (value: ViewMode) => void }) {
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--background)]">
-      <div className="flex min-h-12 items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-base font-semibold">{title}</h2>
-        {action}
-      </div>
-      <div className="p-4">{children}</div>
-    </section>
+    <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--background)] p-1" aria-label="visualization view">
+      {VIEW_MODES.map((mode) => (
+        <button
+          key={mode.value}
+          className={`h-8 rounded px-3 text-sm font-medium transition-colors ${value === mode.value ? "bg-[var(--accent)] text-[var(--accent-foreground)]" : "text-[var(--muted)] hover:bg-[var(--panel)] hover:text-[var(--foreground)]"}`}
+          type="button"
+          onClick={() => onChange(mode.value)}
+        >
+          {mode.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
-function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className={`grid gap-1 text-xs font-medium text-[var(--muted)] ${className}`}>
+    <label className="grid gap-1 text-xs font-medium text-[var(--muted)]">
       <span>{label}</span>
       {children}
     </label>
   );
 }
 
-function StatusBadge({ status }: { status: TaskStatus | AgentStatus }) {
-  const color = status === "completed" || status === "active" ? "var(--success)" : status === "failed" || status === "expired" || status === "cancelled" || status === "suspended" ? "var(--danger)" : status === "submitted" || status === "disputed" ? "var(--warning)" : "var(--info)";
-  return <span className="inline-flex items-center rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: color, color }}>{status}</span>;
+function Signal({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm">
+      <span className="text-[var(--muted)]">{icon}</span>
+      <span className="text-[var(--muted)]">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th className="px-3 py-2 font-semibold">{children}</th>;
+function LifecycleRail({ activeIndex, activeStatus }: { activeIndex: number; activeStatus: TaskStatus | null }) {
+  return (
+    <div className="grid gap-2">
+      {LIFECYCLE.map((status, index) => {
+        const meta = STATUS_META[status];
+        const Icon = meta.icon;
+        const active = activeStatus === status || (status === "completed" && activeStatus && activeIndex >= LIFECYCLE.length - 1);
+        const passed = activeIndex >= index && activeIndex !== -1;
+        return (
+          <div key={status} className={`grid grid-cols-[24px_1fr_auto] items-center gap-2 rounded-md border px-2 py-2 text-sm ${active ? "border-[var(--accent)] bg-[var(--selected)]" : "border-[var(--border)] bg-[var(--background)]"}`}>
+            <Icon size={15} className={passed ? "text-[var(--accent)]" : "text-[var(--muted)]"} />
+            <span className="font-medium">{meta.label}</span>
+            <span className="font-mono text-xs text-[var(--muted)]">{String(index + 1).padStart(2, "0")}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-3 py-3 align-top">{children}</td>;
+function MarketBar({ label, value, max, tone }: { label: string; value: number; max: number; tone: StatusTone }) {
+  const percent = clamp((value / max) * 100, 0, 100);
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-[var(--muted)]">{label}</span>
+        <span className="font-mono">{value.toFixed(value < 1 ? 2 : 0)}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--panel-strong)]">
+        <div className="h-full rounded-full" style={{ width: `${percent}%`, background: toneColor(tone) }} />
+      </div>
+    </div>
+  );
 }
 
-function EmptyRow({ columns, text }: { columns: number; text: string }) {
-  return <tr><td colSpan={columns} className="px-3 py-6 text-center text-sm text-[var(--muted)]">{text}</td></tr>;
+function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDto | null; detail: TaskDetailDto | null; events: EventItem[]; tasks: TaskDto[]; onSelectTask: (taskId: string) => void }) {
+  return (
+    <>
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">compact inspector</div>
+            <h2 className="mt-1 text-base font-semibold">{task ? task.task_id : "No active task"}</h2>
+          </div>
+          {task && <StatusBadge status={task.status} />}
+        </div>
+        {task ? (
+          <div className="grid gap-3 p-4">
+            <Metric label="hirer_agent_id" value={task.hirer_agent_id} />
+            <Metric label="worker_agent_id" value={task.worker_agent_id} />
+            <Metric label="skill_id" value={task.skill_id} />
+            <Metric label="payment_lamports" value={formatLamports(task.payment_lamports)} />
+            <Metric label="worker_payout_lamports" value={formatLamports(task.worker_payout_lamports)} />
+            <Metric label="escrow_account" value={task.escrow_account ?? "none"} />
+            <Metric label="deadline" value={formatDate(task.deadline)} />
+          </div>
+        ) : (
+          <div className="p-4 text-sm text-[var(--muted)]">No protocol tasks are available for visualization.</div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Protocol event stream</h2>
+          <Zap size={16} className="text-[var(--muted)]" />
+        </div>
+        <div className="max-h-[280px] overflow-auto p-4">
+          {events.length > 0 ? (
+            <div className="grid gap-2">
+              {events.map((event) => <EventRow key={event.id} event={event} />)}
+            </div>
+          ) : (
+            <div className="text-sm text-[var(--muted)]">Settlement and reputation events appear after a task is selected.</div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Task index</h2>
+          <Search size={16} className="text-[var(--muted)]" />
+        </div>
+        <div className="max-h-[260px] overflow-auto">
+          {tasks.map((item) => (
+            <button key={item.task_id} className="grid w-full grid-cols-[1fr_auto] gap-3 border-b border-[var(--border)] px-4 py-3 text-left text-sm hover:bg-[var(--selected)]" type="button" onClick={() => onSelectTask(item.task_id)}>
+              <span className="min-w-0">
+                <span className="block truncate font-mono text-xs">{item.task_id}</span>
+                <span className="block truncate text-xs text-[var(--muted)]">{item.worker_agent_id} / {formatLamports(item.payment_lamports)}</span>
+              </span>
+              <StatusBadge status={item.status} />
+            </button>
+          ))}
+          {tasks.length === 0 && <div className="p-4 text-sm text-[var(--muted)]">No tasks match the current filters.</div>}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Raw DTO</h2>
+          <RotateCcw size={16} className="text-[var(--muted)]" />
+        </div>
+        <pre className="max-h-[320px] overflow-auto p-4 text-xs">{JSON.stringify(detail ?? task, null, 2)}</pre>
+      </section>
+    </>
+  );
 }
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="rounded-md bg-[var(--panel)] p-3"><div className="mb-1 text-xs text-[var(--muted)]">{label}</div><div className="break-all text-sm font-medium">{value}</div></div>;
+  return (
+    <div className="grid gap-1 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="text-xs font-medium text-[var(--muted)]">{label}</div>
+      <div className="break-all text-sm font-semibold">{value}</div>
+    </div>
+  );
 }
 
-function Timeline({ title, items }: { title: string; items: unknown[] }) {
+function EventRow({ event }: { event: EventItem }) {
   return (
-    <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">{title}</div>
-      <pre className="max-h-[190px] overflow-auto rounded-md bg-[var(--panel-strong)] p-3 text-xs">{JSON.stringify(items, null, 2)}</pre>
+    <div className="grid grid-cols-[16px_1fr_auto] items-start gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
+      <span className="mt-1 h-2.5 w-2.5 rounded-full" style={{ background: toneColor(event.tone) }} />
+      <span className="min-w-0">
+        <span className="block font-medium">{event.label}</span>
+        <span className="block truncate font-mono text-xs text-[var(--muted)]">{event.taskId}</span>
+      </span>
+      <span className="text-right">
+        <span className="block font-mono text-xs">{event.value}</span>
+        <span className="block text-xs text-[var(--muted)]">{formatDate(event.timestamp)}</span>
+      </span>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: TaskStatus | AgentStatus }) {
+  const meta = STATUS_META[status];
+  const Icon = meta.icon;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: toneColor(meta.tone), color: toneColor(meta.tone) }}>
+      <Icon size={13} />
+      {meta.label}
+    </span>
   );
 }
 
 function Feedback({ issue, notice }: { issue: ApiIssue | null; notice: string | null }) {
   if (issue) {
     return (
-      <div role="alert" className="rounded-md border border-[var(--danger)] bg-[oklch(0.97_0.018_28)] p-4 text-sm">
-        <div className="mb-2 flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> API error envelope</div>
+      <div role="alert" className="border-b border-[var(--danger)] bg-[var(--danger-soft)] px-4 py-3 text-sm">
+        <div className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle size={16} /> API error envelope</div>
         <div className="grid gap-1 font-mono text-xs">
           <span>code: {issue.code}</span>
           <span>message: {issue.message}</span>
@@ -577,19 +466,238 @@ function Feedback({ issue, notice }: { issue: ApiIssue | null; notice: string | 
       </div>
     );
   }
-  return notice ? <div className="rounded-md border border-[var(--success)] bg-[oklch(0.97_0.02_150)] p-4 text-sm">{notice}</div> : null;
+  return notice ? <div className="border-b border-[var(--success)] bg-[var(--success-soft)] px-4 py-3 text-sm">{notice}</div> : null;
 }
 
-function defaultTaskForm() {
-  return {
-    parent_task_id: "",
-    hirer_agent_id: "",
-    worker_agent_id: "",
-    skill_id: "",
-    task_payload: JSON.stringify({ topic: "OmniClaw marketplace discovery" }, null, 2),
-    payment_lamports: "50000000",
-    deadline: new Date(Date.now() + 60 * 60_000).toISOString(),
-  };
+function EmptyVisualization() {
+  return (
+    <div className="flex h-full min-h-[420px] items-center justify-center p-8">
+      <div className="max-w-[520px] text-center">
+        <Network size={32} className="mx-auto mb-3 text-[var(--muted)]" />
+        <h2 className="text-lg font-semibold">No agent graph to render</h2>
+        <p className="mt-2 text-sm text-[var(--muted)]">Register agents and tasks through the API or SDK, then refresh this visualization.</p>
+      </div>
+    </div>
+  );
+}
+
+function buildFlow(agents: AgentDto[], results: DiscoveryResultDto[], tasks: TaskDto[], graph: TaskGraphDto | null, selectedTaskId: string | null, viewMode: ViewMode): { nodes: Node[]; edges: Edge[] } {
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+  const showMarket = viewMode === "all" || viewMode === "market";
+  const showNetwork = viewMode === "all" || viewMode === "network";
+  const showLineage = viewMode === "all" || viewMode === "lineage";
+  const showLifecycle = viewMode === "all" || viewMode === "lifecycle";
+
+  if (showNetwork || showMarket) {
+    agents.forEach((agent, index) => {
+      const angle = (index / Math.max(agents.length, 1)) * Math.PI * 2;
+      const radius = showMarket ? 250 + clamp(agent.reputation_score, 0, 100) : 260;
+      nodes.push({
+        id: `agent:${agent.agent_id}`,
+        type: "default",
+        position: { x: 380 + Math.cos(angle) * radius, y: 260 + Math.sin(angle) * radius },
+        data: {
+          tone: STATUS_META[agent.status].tone,
+          label: <AgentNode agent={agent} />,
+        },
+      });
+    });
+    results.forEach((result, index) => {
+      const skillId = `skill:${result.skill.skill_id}`;
+      nodes.push({
+        id: skillId,
+        type: "default",
+        position: { x: 620 + (index % 3) * 220, y: 120 + Math.floor(index / 3) * 150 },
+        data: {
+          tone: "info",
+          label: <SkillNode result={result} />,
+        },
+      });
+      edges.push({
+        id: `agent-skill:${result.agent.agent_id}:${result.skill.skill_id}`,
+        source: `agent:${result.agent.agent_id}`,
+        target: skillId,
+        animated: true,
+      });
+    });
+  }
+
+  if (showLifecycle) {
+    LIFECYCLE.forEach((status, index) => {
+      nodes.push({
+        id: `state:${status}`,
+        type: "default",
+        position: { x: 80 + index * 210, y: 620 },
+        data: {
+          tone: STATUS_META[status].tone,
+          label: <StateNode status={status} />,
+        },
+      });
+      if (index > 0) {
+        edges.push({
+          id: `state-edge:${LIFECYCLE[index - 1]}:${status}`,
+          source: `state:${LIFECYCLE[index - 1]}`,
+          target: `state:${status}`,
+          animated: true,
+        });
+      }
+    });
+  }
+
+  if (showLineage) {
+    const graphTasks = graph?.nodes.map((node) => ({
+      task_id: node.taskId,
+      parent_task_id: node.parentTaskId,
+      worker_agent_id: node.workerAgentId,
+      payment_lamports: node.paymentLamports,
+      worker_payout_lamports: node.workerPayoutLamports,
+      status: node.status,
+      deadline: node.deadline,
+    })) ?? tasks;
+    graphTasks.forEach((task, index) => {
+      const id = `task:${task.task_id}`;
+      nodes.push({
+        id,
+        type: "default",
+        position: { x: 120 + (index % 4) * 280, y: 880 + Math.floor(index / 4) * 180 },
+        data: {
+          tone: STATUS_META[task.status].tone,
+          label: <TaskNode task={task} selected={selectedTaskId === task.task_id} />,
+        },
+      });
+    });
+    const graphEdges = graph?.edges.map((edge) => ({ from: edge.from, to: edge.to })) ?? tasks.filter((task) => task.parent_task_id).map((task) => ({ from: task.parent_task_id as string, to: task.task_id }));
+    graphEdges.forEach((edge) => {
+      edges.push({
+        id: `task-edge:${edge.from}:${edge.to}`,
+        source: `task:${edge.from}`,
+        target: `task:${edge.to}`,
+        animated: true,
+      });
+    });
+  }
+
+  return { nodes, edges };
+}
+
+function AgentNode({ agent }: { agent: AgentDto }) {
+  return (
+    <div className="min-w-[210px] rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-left shadow-sm">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold">{agent.name}</div>
+          <div className="font-mono text-xs text-[var(--muted)]">{agent.agent_id}</div>
+        </div>
+        <StatusBadge status={agent.status} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <NodeStat label="rep" value={agent.reputation_score} />
+        <NodeStat label="lat" value={`${agent.avg_latency_ms}ms`} />
+        <NodeStat label="stake" value={compactLamports(agent.stake_amount)} />
+      </div>
+    </div>
+  );
+}
+
+function SkillNode({ result }: { result: DiscoveryResultDto }) {
+  return (
+    <div className="min-w-[190px] rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-left shadow-sm">
+      <div className="font-semibold">{result.skill.name}</div>
+      <div className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{result.skill.description}</div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <NodeStat label="rank" value={result.ranking.score.toFixed(2)} />
+        <NodeStat label="price" value={compactLamports(result.skill.base_price_lamports)} />
+      </div>
+    </div>
+  );
+}
+
+function StateNode({ status }: { status: TaskStatus }) {
+  const meta = STATUS_META[status];
+  const Icon = meta.icon;
+  return (
+    <div className="grid min-w-[150px] justify-items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-center shadow-sm">
+      <span style={{ color: toneColor(meta.tone) }}><Icon size={18} /></span>
+      <div className="text-sm font-semibold">{meta.label}</div>
+    </div>
+  );
+}
+
+function TaskNode({ task, selected }: { task: Pick<TaskDto, "task_id" | "worker_agent_id" | "payment_lamports" | "worker_payout_lamports" | "status" | "deadline">; selected: boolean }) {
+  return (
+    <div className={`min-w-[230px] rounded-md border bg-[var(--background)] p-3 text-left shadow-sm ${selected ? "border-[var(--accent)]" : "border-[var(--border)]"}`}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="font-mono text-xs">{task.task_id}</span>
+        <StatusBadge status={task.status} />
+      </div>
+      <div className="grid gap-1 text-xs text-[var(--muted)]">
+        <div>worker: {task.worker_agent_id}</div>
+        <div>payment: {formatLamports(task.payment_lamports)}</div>
+        <div>payout: {formatLamports(task.worker_payout_lamports)}</div>
+        <div>deadline: {formatDate(task.deadline)}</div>
+      </div>
+    </div>
+  );
+}
+
+function NodeStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded bg-[var(--panel)] px-2 py-1">
+      <div className="text-[var(--muted)]">{label}</div>
+      <div className="font-mono font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function uniqueAgents(results: DiscoveryResultDto[]): AgentDto[] {
+  const map = new Map<string, AgentDto>();
+  for (const result of results) {
+    map.set(result.agent.agent_id, result.agent);
+  }
+  return Array.from(map.values());
+}
+
+function collectEvents(detail: TaskDetailDto | null): EventItem[] {
+  if (!detail) {
+    return [];
+  }
+  const settlement = detail.settlement_events.map((event: SettlementEventDto): EventItem => ({
+    id: event.event_id,
+    taskId: event.task_id,
+    kind: "settlement",
+    label: event.event_type,
+    value: formatLamports(event.amount_lamports),
+    tone: event.event_type === "settlement_failed" ? "danger" : event.event_type === "worker_paid" ? "success" : "info",
+    timestamp: event.created_at,
+  }));
+  const reputation = detail.reputation_events.map((event: ReputationEventDto): EventItem => ({
+    id: event.event_id,
+    taskId: event.task_id,
+    kind: "reputation",
+    label: event.success ? "reputation gained" : "reputation penalty",
+    value: `${event.reputation_delta > 0 ? "+" : ""}${event.reputation_delta}`,
+    tone: event.success ? "success" : "danger",
+    timestamp: event.created_at,
+  }));
+  return [...settlement, ...reputation].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+}
+
+function buildMarketSignals(results: DiscoveryResultDto[], tasks: TaskDto[]) {
+  const agents = uniqueAgents(results);
+  const avgReputation = average(agents.map((agent) => agent.reputation_score));
+  const avgQuality = average(agents.map((agent) => agent.quality_score));
+  const avgSuccess = average(agents.map((agent) => agent.success_rate));
+  const latencyPressure = clamp(average(results.map((result) => result.skill.estimated_latency_ms)) / 150, 0, 100);
+  const totalPayment = tasks.reduce((sum, task) => sum + Number(task.payment_lamports), 0).toFixed(0);
+  return { avgReputation, avgQuality, avgSuccess, latencyPressure, totalPayment };
+}
+
+function lifecycleIndex(status: TaskStatus) {
+  if (status === "failed" || status === "expired" || status === "disputed" || status === "cancelled") {
+    return LIFECYCLE.indexOf("submitted");
+  }
+  return LIFECYCLE.indexOf(status);
 }
 
 function compactActor(actor: ActorHeaders): ActorHeaders {
@@ -614,18 +722,6 @@ function cleanTaskFilters(filters: ListTasksFilters): ListTasksFilters {
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)) as ListTasksFilters;
 }
 
-function parseObject(text: string, field: string): { ok: true; value: Record<string, unknown> } | { ok: false; issue: ApiIssue } {
-  try {
-    const value = JSON.parse(text);
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { ok: false, issue: { code: "INVALID_JSON", message: `${field} must be a JSON object`, details: value } };
-    }
-    return { ok: true, value };
-  } catch (error) {
-    return { ok: false, issue: { code: "INVALID_JSON", message: error instanceof Error ? error.message : "invalid JSON", details: { field } } };
-  }
-}
-
 function toIssue(error: unknown): ApiIssue {
   if (error instanceof OmniClawApiError) {
     return { status: error.status, code: error.code, message: error.message, path: error.path, details: error.details };
@@ -633,16 +729,46 @@ function toIssue(error: unknown): ApiIssue {
   return { code: "CLIENT_ERROR", message: error instanceof Error ? error.message : "unknown client error", details: null };
 }
 
+function toneColor(tone: StatusTone) {
+  const colors: Record<StatusTone, string> = {
+    neutral: "var(--muted)",
+    info: "var(--info)",
+    success: "var(--success)",
+    warning: "var(--warning)",
+    danger: "var(--danger)",
+  };
+  return colors[tone];
+}
+
+function average(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function formatLamports(value: string) {
   return `${Number(value).toLocaleString()} lamports`;
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString();
+function compactLamports(value: string) {
+  const lamports = Number(value);
+  if (lamports >= 1_000_000_000) {
+    return `${(lamports / 1_000_000_000).toFixed(1)}B`;
+  }
+  if (lamports >= 1_000_000) {
+    return `${(lamports / 1_000_000).toFixed(1)}M`;
+  }
+  if (lamports >= 1_000) {
+    return `${(lamports / 1_000).toFixed(1)}K`;
+  }
+  return lamports.toLocaleString();
 }
 
-function toLocalDateTime(value: string) {
-  const date = new Date(value);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+function formatDate(value: string) {
+  return new Date(value).toLocaleString();
 }
