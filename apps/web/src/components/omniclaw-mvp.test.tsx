@@ -72,6 +72,15 @@ describe("OmniClaw web MVP", () => {
     expect((await ui.findAllByText("Skill NFTs")).length).toBeGreaterThan(0);
     expect(await ui.findByText("The API now exposes a wallet token ledger for balances, transfer history, and swaps; this is not a Solana SPL transaction.")).toBeTruthy();
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
+
+    fireEvent.click(await ui.findByRole("button", { name: "Ocean Demo" }));
+    expect(await ui.findByText("OmniClaw prototype tour")).toBeTruthy();
+    expect(await ui.findByText("Ocean mode, protocol data")).toBeTruthy();
+    expect(await ui.findByText(/Token, staking, and credential panels show ledger records, not live SPL transfers or Metaplex mints/)).toBeTruthy();
+    expect(await ui.findByRole("button", { name: "Open graph console" })).toBeTruthy();
+    expect(await ui.findByRole("button", { name: "Graph Console" })).toBeTruthy();
+    fireEvent.click(await ui.findByRole("button", { name: "Graph Console" }));
+    expect(await ui.findByText("Autonomous agent hiring graph")).toBeTruthy();
   });
 
   test("renders typed API error envelopes with code, message, path, and details", async () => {
@@ -159,6 +168,20 @@ describe("OmniClaw web MVP", () => {
     fireEvent.click(await ui.findByRole("button", { name: "Activate prototype feature set" }));
     expect(await ui.findByText(/Prototype feature set activated: bid accepted/)).toBeTruthy();
     expect(await ui.findByText("Last activation")).toBeTruthy();
+
+    fireEvent.click(await ui.findByRole("button", { name: "Ocean Demo" }));
+    expect(await ui.findByText("OmniClaw prototype tour")).toBeTruthy();
+    fireEvent.click(await ui.findByRole("button", { name: /Payments/ }));
+    expect(await ui.findByText("Payment gateway")).toBeTruthy();
+    expect(await ui.findByText(/This panel does not present them as live SPL transfers/)).toBeTruthy();
+    expect((await ui.findAllByText("API ledger")).length).toBeGreaterThan(0);
+    fireEvent.click(await ui.findByRole("button", { name: /Skill Credentials/ }));
+    expect(await ui.findByText("Skill credentials")).toBeTruthy();
+    expect(await ui.findByText(/no Metaplex NFT mint is shown as live behavior/)).toBeTruthy();
+    fireEvent.click(await ui.findByRole("button", { name: /Personal Center/ }));
+    expect((await ui.findAllByText("Personal Center")).length).toBeGreaterThan(0);
+    expect(await ui.findByText("wallet")).toBeTruthy();
+
     await waitFor(async () => {
       const tasks = await client.listTasks();
       const parent = tasks.tasks.find((task) => task.task_payload.mission === "Activate prototype feature set");
