@@ -2,7 +2,7 @@ import { createDatabaseConnection } from "@omniclaw/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createRuntimeAdapterFromEnv } from "./adapters/runtime-factory";
-import { MockSettlementAdapter } from "./adapters/settlement";
+import { createSettlementAdapterFromEnv } from "./adapters/settlement-factory";
 import { solanaContractInfo } from "./adapters/solana-contract";
 import { DEFAULT_DISCOVERY_RANKING_CONFIG, type DiscoveryRankingConfig } from "./config";
 import { agentDto, reputationEventDto, settlementEventDto, skillDto, taskDto, taskResultDto } from "./dto";
@@ -43,7 +43,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   const store = env.store ?? createStoreFromEnv();
   const taskDeps = env.taskDeps ?? {
     store,
-    settlement: new MockSettlementAdapter(undefined, store.now),
+    settlement: createSettlementAdapterFromEnv(store.now),
     runtime: createRuntimeAdapterFromEnv(),
   };
   const discoveryRanking = env.discoveryRanking ?? DEFAULT_DISCOVERY_RANKING_CONFIG;

@@ -30,7 +30,7 @@ export const solanaContractInfo = (): SolanaContractInfo => {
   const cluster = process.env.SOLANA_CLUSTER ?? "localnet";
   const configuredSettlementAdapter = process.env.OMNICLAW_SETTLEMENT_ADAPTER === "anchor" ? "anchor" : "mock";
   return {
-    settlement_mode: "mock",
+    settlement_mode: configuredSettlementAdapter,
     configured_settlement_adapter: configuredSettlementAdapter,
     program_id: process.env.OMNICLAW_SOLANA_PROGRAM_ID ?? DEFAULT_SOLANA_PROGRAM_ID,
     cluster,
