@@ -70,7 +70,23 @@ bun run chain:typecheck
 
 Run `chain:build` before `chain:typecheck`; the helper and tests import Anchor-generated types from `contracts/solana/target/types`.
 
-The imported Anchor project lives in `contracts/solana`. It contains the escrow/reputation program, `tests/omniclaw.ts` for the onchain create -> lock -> submit -> complete/slash/cancel loop, and `app/omniclawClient.ts` for wallet-side calls. The API exposes this chain boundary at `GET /settlement/solana`, and the web console renders the same metadata in the settlement panel. The default API path still uses the mock settlement adapter. `OMNICLAW_SETTLEMENT_ADAPTER=anchor` is reported as a configured adapter request for future wiring, but it does not make API task settlement signer-backed until an Anchor settlement adapter is implemented.
+`chain:test` runs dynamic Anchor integration tests against a local validator. The contract package script generates an isolated temporary Solana wallet and passes it to `anchor test --provider.wallet`, so the test suite does not require `~/.config/solana/id.json` to exist on the developer machine.
+
+The imported Anchor project lives in `contracts/solana`. It contains the escrow/reputation program, `tests/omniclaw.ts` for the onchain create -> lock -> submit -> complete/slash/cancel loop, and `app/omniclawClient.ts` for wallet-side calls. The API exposes this chain boundary at `GET /settlement/solana`, and the web console renders the same metadata in the settlement panel. The default API path uses the mock settlement adapter.
+
+Signer-backed Anchor settlement can be enabled for local or devnet testing:
+
+```sh
+OMNICLAW_SETTLEMENT_ADAPTER=anchor \
+SOLANA_CLUSTER=localnet \
+SOLANA_RPC_URL=http://127.0.0.1:8899 \
+OMNICLAW_ANCHOR_SIGNER_KEYPAIRS='{"<hirer_public_key>":"/path/to/hirer.json","<worker_public_key>":"/path/to/worker.json"}' \
+bun --cwd apps/api dev
+```
+
+`OMNICLAW_ANCHOR_SIGNER_KEYPAIRS` is a JSON object keyed by Solana public key. Each value can be either a Solana keypair file path or the secret-key array itself. The API can only create or resolve Anchor-settled tasks when the task agents' `publisher_wallet` values are valid Solana public keys and the required signer keypairs are configured. In Anchor mode, `escrow_account` stores the onchain job account public key; the vault PDA is derived from that job account.
+
+Current contract limitation: the Anchor program pays the full bounty to the worker owner and does not split platform/runtime fees. The API records Anchor payout events according to the onchain transfer until the contract gains fee-recipient accounts.
 
 Python runtime workflow:
 

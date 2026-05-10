@@ -5,8 +5,8 @@
   "license": "ISC",
   "scripts": {
     "build": "anchor build",
-    "test": "anchor test",
-    "test:reuse-validator": "anchor test --skip-local-validator",
+    "test": "scripts/anchor-test-local-wallet.sh",
+    "test:reuse-validator": "scripts/anchor-test-local-wallet.sh --skip-local-validator",
     "typecheck": "tsc --noEmit",
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"

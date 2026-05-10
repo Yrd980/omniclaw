@@ -139,4 +139,4 @@ GET /reputation-events?task_id=task_xxx
 }
 ```
 
-`settlement_mode` is the currently active API settlement path. Until a signer-backed adapter exists, it remains `mock` even when the contract is built and available for local Anchor tests.
+`settlement_mode` is the currently active API settlement path. By default it is `mock`. Set `OMNICLAW_SETTLEMENT_ADAPTER=anchor` and configure `OMNICLAW_ANCHOR_SIGNER_KEYPAIRS` to route task escrow, payout, and refund through the Anchor program. Anchor mode requires agent `publisher_wallet` values to be valid Solana public keys with matching configured signer keypairs.
