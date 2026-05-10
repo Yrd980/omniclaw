@@ -13,12 +13,9 @@ import {
   Coins,
   GitBranch,
   Layers3,
-  LockKeyhole,
   Network,
   Pause,
-  Play,
   RefreshCw,
-  RotateCcw,
   Rocket,
   Search,
   ShieldCheck,
@@ -93,15 +90,6 @@ type DemoScenario = {
     brief: string;
   }>;
 };
-type PrototypeFeature = {
-  label: string;
-  source: string;
-  status: "live" | "contract" | "ledger";
-  tone: StatusTone;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  action: string;
-  detail: (info: SolanaContractInfoDto | null) => string;
-};
 type PrototypeActivation = {
   bid: BidDto;
   stake: StakeEventDto;
@@ -143,17 +131,6 @@ const TOUR_SECTIONS: Array<{ id: TourSectionId; label: string; icon: React.Compo
   { id: "credentials", label: "Skill Credentials", icon: BookOpenCheck },
   { id: "profile", label: "Personal Center", icon: UserCircle },
 ];
-const FEATURE_STATUS_LABELS: Record<PrototypeFeature["status"], string> = {
-  live: "live SDK/API",
-  contract: "contract-ready",
-  ledger: "API ledger",
-};
-const FEATURE_ACTION_LABELS: Record<PrototypeFeature["status"], string> = {
-  live: "Open live graph flow",
-  contract: "Review Anchor boundary",
-  ledger: "Run ledger flow",
-};
-
 const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: StatusTone; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
   active: { label: "active", tone: "success", icon: CircleDot },
   paused: { label: "paused", tone: "warning", icon: Pause },
@@ -210,110 +187,6 @@ const DEMO_SCENARIOS: DemoScenario[] = [
     ],
   },
 ];
-const PROTOTYPE_FEATURES: PrototypeFeature[] = [
-  {
-    label: "AI recruits AI",
-    source: "prototype section",
-    status: "live",
-    tone: "success",
-    icon: GitBranch,
-    action: "Run delegation scenario",
-    detail: () => "Delegation demos create parent and child tasks through the SDK/API.",
-  },
-  {
-    label: "Agent matching",
-    source: "prototype workflow",
-    status: "live",
-    tone: "success",
-    icon: Search,
-    action: "Use discovery ranking",
-    detail: () => "Discovery ranks agents by capability, reputation, latency, price, quality, and stake.",
-  },
-  {
-    label: "SOL escrow boundary",
-    source: "README + payment panel",
-    status: "contract",
-    tone: "info",
-    icon: Coins,
-    action: "Use settlement adapter metadata",
-    detail: (info) => info?.settlement_mode === "anchor"
-      ? "Anchor adapter is active for SOL escrow settlement."
-      : "API settlement is mocked while the Anchor contract boundary remains visible.",
-  },
-  {
-    label: "Reputation rewards",
-    source: "README + rankings panel",
-    status: "live",
-    tone: "success",
-    icon: BadgeCheck,
-    action: "Inspect reputation events",
-    detail: () => "Resolved tasks record reputation events and update agent aggregates.",
-  },
-  {
-    label: "Cancel, slash, refund boundary",
-    source: "README contract flow",
-    status: "contract",
-    tone: "warning",
-    icon: ShieldCheck,
-    action: "Use refund-capable settlement path",
-    detail: () => "Anchor helper exposes cancel and slash paths; the console surfaces refund events through settlement timelines.",
-  },
-  {
-    label: "Agent bidding",
-    source: "prototype workflow",
-    status: "live",
-    tone: "success",
-    icon: Activity,
-    action: "Submit and accept API bids",
-    detail: () => "Agents can submit task bids through the SDK/API; hirers can accept one and close competing bids.",
-  },
-  {
-    label: "SPL-style token gateway",
-    source: "prototype payment panel",
-    status: "ledger",
-    tone: "info",
-    icon: WalletCards,
-    action: "Credit and swap token ledger",
-    detail: () => "The API now exposes a wallet token ledger for balances, transfer history, and swaps; this is not a Solana SPL transaction.",
-  },
-  {
-    label: "Stake SOL ledger",
-    source: "prototype reputation panel",
-    status: "ledger",
-    tone: "success",
-    icon: Layers3,
-    action: "Stake or unstake agent ledger",
-    detail: () => "Agents can record stake and unstake events through the SDK/API, updating ranking stake_amount.",
-  },
-  {
-    label: "Skill NFTs",
-    source: "prototype NFT panel",
-    status: "ledger",
-    tone: "success",
-    icon: BookOpenCheck,
-    action: "Mint skill credential records",
-    detail: () => "Skills can mint credential records with owner, rarity, and metadata through the SDK/API.",
-  },
-  {
-    label: "Personal Center",
-    source: "prototype profile panel",
-    status: "live",
-    tone: "success",
-    icon: UserCircle,
-    action: "Load profile and history",
-    detail: () => "Wallet profiles aggregate agents, tasks, settlement events, token history, and skill credentials.",
-  },
-  {
-    label: "Payment history and swaps",
-    source: "prototype wallet panel",
-    status: "ledger",
-    tone: "info",
-    icon: LockKeyhole,
-    action: "Record token swaps and history",
-    detail: () => "Wallet token transfers and swaps are available through SDK/API profile and token endpoints.",
-  },
-];
-
 export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [apiUrl, setApiUrl] = useState(API_URL);
   const client = useMemo(() => injectedClient ?? createOmniClawClient({ baseUrl: apiUrl }), [apiUrl, injectedClient]);
@@ -327,7 +200,6 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [contractInfo, setContractInfo] = useState<SolanaContractInfoDto | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [paused, setPaused] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [issue, setIssue] = useState<ApiIssue | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -518,7 +390,6 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const events = useMemo(() => collectEvents(detail), [detail]);
   const market = useMemo(() => buildMarketSignals(results, tasks), [results, tasks]);
   const activeTask = detail?.task ?? tasks.find((task) => task.task_id === selectedTaskId) ?? null;
-  const activeStatusIndex = activeTask ? lifecycleIndex(activeTask.status) : -1;
   const flow = useMemo(() => buildFlow(agents, results, tasks, graph, selectedTaskId, viewMode), [agents, graph, results, selectedTaskId, tasks, viewMode]);
   const tourData = useMemo<TourData>(() => ({
     agents,
@@ -585,18 +456,15 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
           }}
         />
       ) : (
-      <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-h-[calc(100vh-112px)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
-          <div className="border-b border-[var(--border)] bg-[var(--demo-band)] px-4 py-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
               <div>
-                <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                  <Coins size={13} /> real SDK flow
+                <div className="mb-1 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  <Coins size={13} /> SDK demo flows
                 </div>
-                <h2 className="text-lg font-semibold">Spin up a delegation market and watch the protocol graph settle.</h2>
-                <p className="mt-1 max-w-[74ch] text-sm text-[var(--muted)]">
-                  These demos register agents, discover specialists by capability, create escrow-backed child tasks, resolve results, then load the graph returned by the API. Wallet and chain transactions stay at the Anchor boundary unless the API reports an active adapter.
-                </p>
+                <h2 className="text-base font-semibold">Create a live delegation graph, then inspect the selected task.</h2>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
                 {DEMO_SCENARIOS.map((scenario) => (
@@ -619,14 +487,12 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
               <Signal icon={<Network size={15} />} label="agents" value={String(agents.length)} />
               <Signal icon={<GitBranch size={15} />} label="tasks" value={String(tasks.length)} />
               <Signal icon={<ShieldCheck size={15} />} label="settlement" value={contractInfo?.settlement_mode ?? "mock"} />
-              <Signal icon={<BadgeDollarSign size={15} />} label="volume" value={formatLamports(market.totalPayment)} />
-              <Button variant="secondary" onClick={() => setPaused((current) => !current)} icon={paused ? <Play size={16} /> : <Pause size={16} />}>{paused ? "Play" : "Pause"}</Button>
             </div>
           </div>
 
           {(issue || notice) && <Feedback issue={issue} notice={notice} />}
 
-          <div className="grid min-h-[720px] grid-rows-[minmax(360px,1fr)_auto] xl:grid-cols-[minmax(0,1fr)_320px] xl:grid-rows-none">
+          <div className="min-h-[720px]">
             <div className="relative min-h-[420px]">
               {flow.nodes.length > 0 ? (
                 <ReactFlow
@@ -647,33 +513,11 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
                 <EmptyVisualization />
               )}
             </div>
-
-            <aside className="border-t border-[var(--border)] bg-[var(--panel)] p-4 xl:border-l xl:border-t-0">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">market signals</div>
-                  <h2 className="mt-1 text-base font-semibold">Agent capability field</h2>
-                </div>
-                <Activity size={18} className={paused ? "text-[var(--muted)]" : "animate-pulse text-[var(--accent)]"} />
-              </div>
-              <div className="grid gap-3">
-                <MarketBar label="avg reputation" value={market.avgReputation} max={100} tone="success" />
-                <MarketBar label="avg quality" value={market.avgQuality} max={100} tone="info" />
-                <MarketBar label="success rate" value={market.avgSuccess * 100} max={100} tone="success" />
-                <MarketBar label="latency pressure" value={market.latencyPressure} max={100} tone="warning" />
-              </div>
-              <div className="mt-5 border-t border-[var(--border)] pt-4">
-                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">lifecycle rail</div>
-                <LifecycleRail activeIndex={activeStatusIndex} activeStatus={activeTask?.status ?? null} />
-              </div>
-            </aside>
           </div>
         </section>
 
         <aside className="grid gap-4">
-          <ProtocolBoundaryPanel info={contractInfo} activation={prototypeActivation} busy={busy === "prototype"} onActivate={runPrototypeActivation} />
-          <SettlementPanel info={contractInfo} />
-          <PrototypeCoveragePanel info={contractInfo} />
+          <ConsoleSummary market={market} contractInfo={contractInfo} />
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
         </aside>
       </div>
@@ -1126,49 +970,14 @@ function Signal({ icon, label, value }: { icon: React.ReactNode; label: string; 
   );
 }
 
-function LifecycleRail({ activeIndex, activeStatus }: { activeIndex: number; activeStatus: TaskStatus | null }) {
-  return (
-    <div className="grid gap-2">
-      {LIFECYCLE.map((status, index) => {
-        const meta = STATUS_META[status];
-        const Icon = meta.icon;
-        const active = activeStatus === status || (status === "completed" && activeStatus && activeIndex >= LIFECYCLE.length - 1);
-        const passed = activeIndex >= index && activeIndex !== -1;
-        return (
-          <div key={status} className={`grid grid-cols-[24px_1fr_auto] items-center gap-2 rounded-md border px-2 py-2 text-sm ${active ? "border-[var(--accent)] bg-[var(--selected)]" : "border-[var(--border)] bg-[var(--background)]"}`}>
-            <Icon size={15} className={passed ? "text-[var(--accent)]" : "text-[var(--muted)]"} />
-            <span className="font-medium">{meta.label}</span>
-            <span className="font-mono text-xs text-[var(--muted)]">{String(index + 1).padStart(2, "0")}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function MarketBar({ label, value, max, tone }: { label: string; value: number; max: number; tone: StatusTone }) {
-  const percent = clamp((value / max) * 100, 0, 100);
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-[var(--muted)]">{label}</span>
-        <span className="font-mono">{value.toFixed(value < 1 ? 2 : 0)}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-[var(--panel-strong)]">
-        <div className="h-full rounded-full" style={{ width: `${percent}%`, background: toneColor(tone) }} />
-      </div>
-    </div>
-  );
-}
-
 function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDto | null; detail: TaskDetailDto | null; events: EventItem[]; tasks: TaskDto[]; onSelectTask: (taskId: string) => void }) {
   return (
     <>
       <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">compact inspector</div>
-            <h2 className="mt-1 text-base font-semibold">{task ? task.task_id : "No active task"}</h2>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">selected task</div>
+            <h2 className="mt-1 break-all text-sm font-semibold">{task ? task.task_id : "No active task"}</h2>
           </div>
           {task && <StatusBadge status={task.status} />}
         </div>
@@ -1221,185 +1030,33 @@ function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDt
           {tasks.length === 0 && <div className="p-4 text-sm text-[var(--muted)]">No tasks match the current filters.</div>}
         </div>
       </section>
-
-      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-          <h2 className="text-base font-semibold">Raw DTO</h2>
-          <RotateCcw size={16} className="text-[var(--muted)]" />
-        </div>
-        <pre className="max-h-[320px] overflow-auto p-4 text-xs">{JSON.stringify(detail ?? task, null, 2)}</pre>
-      </section>
     </>
   );
 }
 
-function SettlementPanel({ info }: { info: SolanaContractInfoDto | null }) {
+function ConsoleSummary({ market, contractInfo }: { market: ReturnType<typeof buildMarketSignals>; contractInfo: SolanaContractInfoDto | null }) {
   return (
     <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">settlement contract</div>
-          <h2 className="mt-1 text-base font-semibold">{info?.settlement_mode === "anchor" ? "Anchor adapter" : "Anchor-ready mock mode"}</h2>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">console state</div>
+          <h2 className="mt-1 text-base font-semibold">Protocol snapshot</h2>
         </div>
-        <ShieldCheck size={17} className="text-[var(--accent)]" />
-      </div>
-      {info ? (
-        <div className="grid gap-3 p-4">
-          <Metric label="program_id" value={info.program_id} />
-          <div className="grid grid-cols-2 gap-3">
-            <Metric label="cluster" value={info.cluster} />
-            <Metric label="mode" value={info.settlement_mode} />
-          </div>
-          <Metric label="configured_adapter" value={info.configured_settlement_adapter} />
-          <Metric label="contract_path" value={info.contract_path} />
-          <Metric label="helper" value={info.frontend_helper} />
-          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-            <div className="mb-2 text-xs font-medium text-[var(--muted)]">anchor commands</div>
-            <div className="grid gap-1 font-mono text-xs">
-              <span>{info.anchor_commands.build}</span>
-              <span>{info.anchor_commands.test}</span>
-              <span>{info.anchor_commands.typecheck}</span>
-            </div>
-          </div>
-          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-            <div className="mb-2 text-xs font-medium text-[var(--muted)]">Anchor instruction boundary</div>
-            <div className="flex flex-wrap gap-1.5">
-              {info.instructions.map((instruction) => (
-                <code key={instruction} className="rounded bg-[var(--panel)] px-2 py-1 text-[11px]">
-                  {instruction}
-                </code>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-            <div className="mb-2 text-xs font-medium text-[var(--muted)]">Anchor job status map</div>
-            <div className="grid gap-1.5">
-              {info.job_statuses.map((status) => (
-                <div key={status.value} className="grid grid-cols-[32px_1fr_auto] gap-2 text-xs">
-                  <span className="font-mono text-[var(--muted)]">{status.value}</span>
-                  <span>{status.label}</span>
-                  <span className="font-mono text-[var(--muted)]">{status.api_status}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="p-4 text-sm text-[var(--muted)]">Solana contract metadata loads from the API settlement boundary.</div>
-      )}
-    </section>
-  );
-}
-
-function ProtocolBoundaryPanel({ info, activation, busy, onActivate }: { info: SolanaContractInfoDto | null; activation: PrototypeActivation | null; busy: boolean; onActivate: () => void }) {
-  const grouped = useMemo(() => ({
-    live: PROTOTYPE_FEATURES.filter((feature) => feature.status === "live"),
-    contract: PROTOTYPE_FEATURES.filter((feature) => feature.status === "contract"),
-    ledger: PROTOTYPE_FEATURES.filter((feature) => feature.status === "ledger"),
-  }), []);
-
-  return (
-    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">protocol boundary</div>
-          <h2 className="mt-1 text-base font-semibold">Prototype ideas, product-honest controls</h2>
-        </div>
-        <LockKeyhole size={17} className="text-[var(--accent)]" />
+        <ActivityIcon />
       </div>
       <div className="grid gap-3 p-4">
-        <Button onClick={onActivate} busy={busy} icon={<Zap size={16} />}>
-          Activate prototype feature set
-        </Button>
-        <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--muted)]">
-          Settlement mode: <span className="font-mono text-[var(--foreground)]">{info?.settlement_mode ?? "loading"}</span>. Ledger features are SDK/API-backed records; Anchor features use the configured settlement adapter.
-        </div>
-        {activation && (
-          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs">
-            <div className="mb-2 font-semibold">Last activation</div>
-            <div className="grid gap-1 text-[var(--muted)]">
-              <span>bid: {activation.bid.status} / {formatLamports(activation.bid.price_lamports)}</span>
-              <span>stake: {formatLamports(activation.stake.resulting_stake_lamports)}</span>
-              <span>credential: {activation.credential.name} ({activation.credential.rarity})</span>
-              <span>swap: {formatLamports(activation.swap.amount_lamports)} {activation.swap.from_symbol} to {activation.swap.to_symbol}</span>
-              <span>profile transfers: {activation.profile.token_transfers.length}</span>
-            </div>
-          </div>
-        )}
-        {(Object.keys(grouped) as PrototypeFeature["status"][]).map((status) => (
-          <div key={status} className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{FEATURE_STATUS_LABELS[status]}</span>
-              <span className="font-mono text-xs">{grouped[status].length}</span>
-            </div>
-            <div className="grid gap-2">
-              {grouped[status].map((feature) => {
-                return (
-                  <button
-                    key={feature.label}
-                    type="button"
-                    disabled={busy}
-                    onClick={onActivate}
-                    aria-label={`${feature.label}: ${FEATURE_ACTION_LABELS[feature.status]}`}
-                    className="grid grid-cols-[18px_1fr_auto] items-center gap-2 rounded border border-[var(--border)] bg-[var(--panel)] px-2.5 py-2 text-left text-xs transition-colors enabled:hover:border-[var(--accent)] enabled:hover:bg-[var(--selected)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <feature.icon size={14} className="text-[var(--muted)]" />
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold">{feature.label}</span>
-                      <span className="block truncate text-[var(--muted)]">{feature.action}</span>
-                    </span>
-                    <span className="rounded px-1.5 py-0.5 font-mono" style={{ color: toneColor(feature.tone) }}>
-                      {feature.status}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+        <Metric label="settlement_mode" value={contractInfo?.settlement_mode ?? "loading"} />
+        <Metric label="total_payment_lamports" value={formatLamports(market.totalPayment)} />
+        <Metric label="avg_reputation" value={market.avgReputation.toFixed(0)} />
       </div>
     </section>
   );
 }
 
-function PrototypeCoveragePanel({ info }: { info: SolanaContractInfoDto | null }) {
+function ActivityIcon() {
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">prototype coverage</div>
-          <h2 className="mt-1 text-base font-semibold">Referenced feature map</h2>
-        </div>
-        <BookOpenCheck size={17} className="text-[var(--accent)]" />
-      </div>
-      <div className="grid gap-2 p-4">
-        {PROTOTYPE_FEATURES.map((feature) => {
-          const Icon = feature.icon;
-          return (
-            <div key={feature.label} className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span style={{ color: toneColor(feature.tone) }}>
-                    <Icon size={15} />
-                  </span>
-                  <span className="truncate text-sm font-semibold">{feature.label}</span>
-                </div>
-                <FeatureStatusBadge feature={feature} />
-              </div>
-              <div className="text-xs text-[var(--muted)]">{feature.detail(info)}</div>
-              <div className="font-mono text-[11px] text-[var(--muted)]">source: {feature.source}</div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function FeatureStatusBadge({ feature }: { feature: PrototypeFeature }) {
-  return (
-    <span className="shrink-0 rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: toneColor(feature.tone), color: toneColor(feature.tone) }}>
-      {FEATURE_STATUS_LABELS[feature.status]}
+    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--selected)] text-[var(--accent)]">
+      <Activity size={16} />
     </span>
   );
 }
@@ -1679,13 +1336,6 @@ function buildMarketSignals(results: DiscoveryResultDto[], tasks: TaskDto[]) {
   const latencyPressure = clamp(average(results.map((result) => result.skill.estimated_latency_ms)) / 150, 0, 100);
   const totalPayment = tasks.reduce((sum, task) => sum + Number(task.payment_lamports), 0).toFixed(0);
   return { avgReputation, avgQuality, avgSuccess, latencyPressure, totalPayment };
-}
-
-function lifecycleIndex(status: TaskStatus) {
-  if (status === "failed" || status === "expired" || status === "disputed" || status === "cancelled") {
-    return LIFECYCLE.indexOf("submitted");
-  }
-  return LIFECYCLE.indexOf(status);
 }
 
 function compactActor(actor: ActorHeaders): ActorHeaders {

@@ -52,25 +52,18 @@ describe("OmniClaw web MVP", () => {
     expect(await ui.findByText("Autonomous agent hiring graph")).toBeTruthy();
     expect(await ui.findByText("Protocol event stream")).toBeTruthy();
     expect((await ui.findAllByText(createdTask.task_id, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
+    expect(await ui.findByText("Protocol snapshot")).toBeTruthy();
+    expect(ui.queryByText("Raw DTO")).toBeNull();
+    expect(ui.queryByText("Prototype ideas, product-honest controls")).toBeNull();
+    expect(ui.queryByText("Referenced feature map")).toBeNull();
+    expect(ui.queryByText("Anchor instruction boundary")).toBeNull();
     expect(detail.task.status).toBe("completed");
     expect(detail.result?.result_payload).toEqual({ summary: "Submitted through SDK smoke coverage" });
     expect(detail.settlement_events.some((event) => event.event_type === "worker_paid")).toBe(true);
     expect(detail.reputation_events.length).toBe(1);
     expect(graph.nodes[0]?.taskId).toBe(createdTask.task_id);
     expect(solana.program_id).toBe("292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv");
-    expect(await ui.findByText("Anchor-ready mock mode")).toBeTruthy();
-    expect(await ui.findByText("Prototype ideas, product-honest controls")).toBeTruthy();
-    expect(await ui.findByText("Anchor instruction boundary")).toBeTruthy();
-    expect(await ui.findByText("Anchor job status map")).toBeTruthy();
-    expect(await ui.findByText("complete_job")).toBeTruthy();
-    expect(await ui.findByText("cancel_job")).toBeTruthy();
-    expect(await ui.findByText("slash_agent")).toBeTruthy();
-    expect(await ui.findByText("slashed")).toBeTruthy();
     expect((await ui.findAllByText("failed")).length).toBeGreaterThan(0);
-    expect(await ui.findByText("Referenced feature map")).toBeTruthy();
-    expect((await ui.findAllByText("SPL-style token gateway")).length).toBeGreaterThan(0);
-    expect((await ui.findAllByText("Skill NFTs")).length).toBeGreaterThan(0);
-    expect(await ui.findByText("The API now exposes a wallet token ledger for balances, transfer history, and swaps; this is not a Solana SPL transaction.")).toBeTruthy();
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
 
     fireEvent.click(await ui.findByRole("button", { name: "Ocean Demo" }));
@@ -150,27 +143,14 @@ describe("OmniClaw web MVP", () => {
     const client = createOmniClawClient({ baseUrl: "http://omniclaw.test", fetch: honoFetch(ctx.app) });
     const ui = render(<OmniClawMvp client={client} />);
 
-    expect((await ui.findAllByText("API ledger")).length).toBeGreaterThan(0);
-    const bidding = await ui.findByRole("button", { name: "Agent bidding: Open live graph flow" }) as HTMLButtonElement;
-    const tokenGateway = await ui.findByRole("button", { name: "SPL-style token gateway: Run ledger flow" }) as HTMLButtonElement;
-    const skillNfts = await ui.findByRole("button", { name: "Skill NFTs: Run ledger flow" }) as HTMLButtonElement;
-    const paymentHistory = await ui.findByRole("button", { name: "Payment history and swaps: Run ledger flow" }) as HTMLButtonElement;
-    const stakeLedger = await ui.findByRole("button", { name: "Stake SOL ledger: Run ledger flow" }) as HTMLButtonElement;
-    const personalCenter = await ui.findByRole("button", { name: "Personal Center: Open live graph flow" }) as HTMLButtonElement;
-
-    expect(bidding.disabled).toBe(false);
-    expect(tokenGateway.disabled).toBe(false);
-    expect(skillNfts.disabled).toBe(false);
-    expect(paymentHistory.disabled).toBe(false);
-    expect(stakeLedger.disabled).toBe(false);
-    expect(personalCenter.disabled).toBe(false);
-
-    fireEvent.click(await ui.findByRole("button", { name: "Activate prototype feature set" }));
-    expect(await ui.findByText(/Prototype feature set activated: bid accepted/)).toBeTruthy();
-    expect(await ui.findByText("Last activation")).toBeTruthy();
+    expect(await ui.findByText("Autonomous agent hiring graph")).toBeTruthy();
+    expect(ui.queryByText("Activate prototype feature set")).toBeNull();
 
     fireEvent.click(await ui.findByRole("button", { name: "Ocean Demo" }));
     expect(await ui.findByText("OmniClaw prototype tour")).toBeTruthy();
+    fireEvent.click(await ui.findByRole("button", { name: "Seed tour data" }));
+    expect(await ui.findByText(/Prototype feature set activated: bid accepted/)).toBeTruthy();
+
     fireEvent.click(await ui.findByRole("button", { name: /Payments/ }));
     expect(await ui.findByText("Payment gateway")).toBeTruthy();
     expect(await ui.findByText(/This panel does not present them as live SPL transfers/)).toBeTruthy();
