@@ -22,6 +22,9 @@
   --info: oklch(0.72 0.16 238);
   --flow-grid: oklch(0.48 0.045 244);
   --demo-band: linear-gradient(115deg, oklch(0.2 0.052 252), oklch(0.22 0.06 202) 48%, oklch(0.19 0.05 292));
+  --ocean-band: radial-gradient(circle at 78% 18%, oklch(0.42 0.1 181 / 0.28), transparent 22%), linear-gradient(115deg, oklch(0.18 0.05 248), oklch(0.2 0.064 207) 48%, oklch(0.17 0.045 168));
+  --ocean-line: oklch(0.74 0.17 174 / 0.58);
+  --ocean-line-soft: oklch(0.72 0.12 220 / 0.25);
 }
 
 * {

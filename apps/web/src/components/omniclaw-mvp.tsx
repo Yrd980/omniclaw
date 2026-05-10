@@ -7,6 +7,7 @@ import {
   BadgeDollarSign,
   BadgeCheck,
   BookOpenCheck,
+  ChevronRight,
   Circle,
   CircleDot,
   Coins,
@@ -68,6 +69,8 @@ type ApiIssue = {
 };
 
 type ViewMode = "all" | "network" | "lifecycle" | "market" | "lineage";
+type SurfaceMode = "console" | "tour";
+type TourSectionId = "hero" | "ai" | "reputation" | "payments" | "credentials" | "profile";
 type EventItem = {
   id: string;
   taskId: string;
@@ -106,6 +109,16 @@ type PrototypeActivation = {
   swap: TokenTransferDto;
   profile: ProfileDto;
 };
+type TourData = {
+  agents: AgentDto[];
+  tasks: TaskDto[];
+  graph: TaskGraphDto | null;
+  detail: TaskDetailDto | null;
+  events: EventItem[];
+  market: ReturnType<typeof buildMarketSignals>;
+  contractInfo: SolanaContractInfoDto | null;
+  activation: PrototypeActivation | null;
+};
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
 const AGENT_STATUSES: AgentStatus[] = ["active", "paused", "suspended"];
@@ -117,6 +130,18 @@ const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
   { value: "lifecycle", label: "Lifecycle" },
   { value: "market", label: "Market" },
   { value: "lineage", label: "Lineage" },
+];
+const SURFACE_MODES: Array<{ value: SurfaceMode; label: string }> = [
+  { value: "console", label: "Graph Console" },
+  { value: "tour", label: "Ocean Demo" },
+];
+const TOUR_SECTIONS: Array<{ id: TourSectionId; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = [
+  { id: "hero", label: "OmniClaw", icon: Sparkles },
+  { id: "ai", label: "AI Recruits", icon: GitBranch },
+  { id: "reputation", label: "Reputation", icon: BadgeCheck },
+  { id: "payments", label: "Payments", icon: WalletCards },
+  { id: "credentials", label: "Skill Credentials", icon: BookOpenCheck },
+  { id: "profile", label: "Personal Center", icon: UserCircle },
 ];
 const FEATURE_STATUS_LABELS: Record<PrototypeFeature["status"], string> = {
   live: "live SDK/API",
@@ -307,6 +332,8 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [issue, setIssue] = useState<ApiIssue | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [prototypeActivation, setPrototypeActivation] = useState<PrototypeActivation | null>(null);
+  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("console");
+  const [tourSection, setTourSection] = useState<TourSectionId>("hero");
 
   const activeActor = useMemo(() => compactActor(actor), [actor]);
 
@@ -493,6 +520,16 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const activeTask = detail?.task ?? tasks.find((task) => task.task_id === selectedTaskId) ?? null;
   const activeStatusIndex = activeTask ? lifecycleIndex(activeTask.status) : -1;
   const flow = useMemo(() => buildFlow(agents, results, tasks, graph, selectedTaskId, viewMode), [agents, graph, results, selectedTaskId, tasks, viewMode]);
+  const tourData = useMemo<TourData>(() => ({
+    agents,
+    tasks,
+    graph,
+    detail,
+    events,
+    market,
+    contractInfo,
+    activation: prototypeActivation,
+  }), [agents, contractInfo, detail, events, graph, market, prototypeActivation, tasks]);
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -523,6 +560,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <SurfaceSwitch value={surfaceMode} onChange={setSurfaceMode} />
             <Select aria-label="actor role" value={actor.role ?? ""} onChange={(event) => setActor({ ...actor, role: event.target.value ? event.target.value as ActorHeaders["role"] : undefined })} className="w-[120px]">
               {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role || "observer"}</option>)}
             </Select>
@@ -531,6 +569,22 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
         </div>
       </header>
 
+      {surfaceMode === "tour" ? (
+        <PrototypeTour
+          data={tourData}
+          section={tourSection}
+          busy={busy}
+          issue={issue}
+          notice={notice}
+          onSectionChange={setTourSection}
+          onRunDemo={runDemoScenario}
+          onActivate={runPrototypeActivation}
+          onOpenConsole={(nextViewMode) => {
+            setViewMode(nextViewMode);
+            setSurfaceMode("console");
+          }}
+        />
+      ) : (
       <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_400px]">
         <section className="min-h-[calc(100vh-112px)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
           <div className="border-b border-[var(--border)] bg-[var(--demo-band)] px-4 py-4">
@@ -623,7 +677,416 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
         </aside>
       </div>
+      )}
     </main>
+  );
+}
+
+function SurfaceSwitch({ value, onChange }: { value: SurfaceMode; onChange: (value: SurfaceMode) => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--background)] p-1" aria-label="product surface">
+      {SURFACE_MODES.map((mode) => (
+        <button
+          key={mode.value}
+          className={`h-8 rounded px-3 text-sm font-medium transition-colors ${value === mode.value ? "bg-[var(--accent)] text-[var(--accent-foreground)]" : "text-[var(--muted)] hover:bg-[var(--panel)] hover:text-[var(--foreground)]"}`}
+          type="button"
+          onClick={() => onChange(mode.value)}
+        >
+          {mode.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PrototypeTour({
+  data,
+  section,
+  busy,
+  issue,
+  notice,
+  onSectionChange,
+  onRunDemo,
+  onActivate,
+  onOpenConsole,
+}: {
+  data: TourData;
+  section: TourSectionId;
+  busy: string | null;
+  issue: ApiIssue | null;
+  notice: string | null;
+  onSectionChange: (section: TourSectionId) => void;
+  onRunDemo: (scenario: DemoScenario) => void;
+  onActivate: () => void;
+  onOpenConsole: (viewMode: ViewMode) => void;
+}) {
+  const activeIndex = TOUR_SECTIONS.findIndex((item) => item.id === section);
+  const selectedSection = TOUR_SECTIONS[Math.max(activeIndex, 0)] ?? TOUR_SECTIONS[0];
+  const SectionIcon = selectedSection.icon;
+
+  return (
+    <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+      <nav className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 xl:sticky xl:top-4 xl:h-[calc(100vh-118px)]" aria-label="prototype tour sections">
+        <div className="mb-3 px-2">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">prototype tour</div>
+          <h2 className="mt-1 text-base font-semibold">Ocean mode, protocol data</h2>
+        </div>
+        <div className="grid gap-1">
+          {TOUR_SECTIONS.map((item, index) => {
+            const Icon = item.icon;
+            const active = item.id === section;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSectionChange(item.id)}
+                className={`grid grid-cols-[24px_1fr_auto] items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors ${active ? "bg-[var(--selected)] text-[var(--foreground)]" : "text-[var(--muted)] hover:bg-[var(--background)] hover:text-[var(--foreground)]"}`}
+              >
+                <Icon size={16} />
+                <span>{item.label}</span>
+                <span className="font-mono text-xs">{String(index + 1).padStart(2, "0")}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-4 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--muted)]">
+          This tour reads SDK/API records. Token, staking, and credential panels show ledger records, not live SPL transfers or Metaplex mints.
+        </div>
+      </nav>
+
+      <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
+        <div className="relative border-b border-[var(--border)] bg-[var(--ocean-band)] px-5 py-5">
+          <OceanBackdrop />
+          <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                <SectionIcon size={13} /> {selectedSection.label}
+              </div>
+              <h1 className="mt-3 text-2xl font-semibold">OmniClaw prototype tour</h1>
+              <p className="mt-2 max-w-[72ch] text-sm text-[var(--muted)]">
+                A spatial, ocean-inspired walkthrough of the protocol console. Each panel is backed by the same agents, tasks, settlement events, ledgers, credentials, and wallet profile aggregation used by the graph.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => onOpenConsole("lineage")} icon={<Network size={16} />}>Open graph console</Button>
+              <Button onClick={onActivate} busy={busy === "prototype"} icon={<Zap size={16} />}>Seed tour data</Button>
+            </div>
+          </div>
+        </div>
+
+        {(issue || notice) && <Feedback issue={issue} notice={notice} />}
+
+        <div className="grid gap-4 p-4">
+          {section === "hero" && <TourHero data={data} onRunDemo={onRunDemo} busy={busy} onOpenConsole={onOpenConsole} />}
+          {section === "ai" && <TourAiRecruits data={data} onRunDemo={onRunDemo} busy={busy} onOpenConsole={onOpenConsole} />}
+          {section === "reputation" && <TourReputation data={data} onActivate={onActivate} busy={busy} />}
+          {section === "payments" && <TourPayments data={data} onActivate={onActivate} busy={busy} />}
+          {section === "credentials" && <TourCredentials data={data} onActivate={onActivate} busy={busy} />}
+          {section === "profile" && <TourProfile data={data} onActivate={onActivate} busy={busy} />}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OceanBackdrop() {
+  return (
+    <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
+      <div className="absolute inset-x-[-10%] bottom-[-32px] h-28 opacity-55">
+        <div className="absolute inset-0 rounded-[50%] border-t border-[var(--ocean-line)]" />
+        <div className="absolute inset-x-[6%] top-5 h-20 rounded-[50%] border-t border-[var(--ocean-line-soft)]" />
+        <div className="absolute inset-x-[18%] top-10 h-16 rounded-[50%] border-t border-[var(--ocean-line-soft)]" />
+      </div>
+      <div className="absolute right-10 top-8 h-20 w-20 rounded-full border border-[var(--border)] bg-[var(--selected)] opacity-30" />
+    </div>
+  );
+}
+
+function TourHero({ data, onRunDemo, busy, onOpenConsole }: { data: TourData; onRunDemo: (scenario: DemoScenario) => void; busy: string | null; onOpenConsole: (viewMode: ViewMode) => void }) {
+  const completed = data.tasks.filter((task) => task.status === "completed").length;
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+      <section className="min-h-[360px] rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+        <div className="max-w-[760px]">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+            <Coins size={13} /> graph-first protocol console
+          </div>
+          <h2 className="text-3xl font-semibold">Autonomous agents hire, settle, and leave an inspectable trail.</h2>
+          <p className="mt-3 max-w-[70ch] text-sm text-[var(--muted)]">
+            The prototype ocean becomes a product tour here: no fake balances, no implied live NFT minting, no marketing replacement. Run a scenario to create live SDK/API graph data, then inspect the same state in the console.
+          </p>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {DEMO_SCENARIOS.map((scenario) => (
+            <Button
+              key={scenario.slug}
+              variant="secondary"
+              onClick={() => onRunDemo(scenario)}
+              busy={busy === `demo:${scenario.slug}`}
+              icon={<Rocket size={16} style={{ color: toneColor(scenario.accent) }} />}
+            >
+              {scenario.label}
+            </Button>
+          ))}
+          <Button onClick={() => onOpenConsole("lineage")} icon={<ChevronRight size={16} />}>Inspect lineage</Button>
+        </div>
+      </section>
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+        <div className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">live state</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TourMetric icon={<Network size={16} />} label="agents" value={String(data.agents.length)} />
+          <TourMetric icon={<GitBranch size={16} />} label="tasks" value={String(data.tasks.length)} />
+          <TourMetric icon={<ShieldCheck size={16} />} label="completed tasks" value={String(completed)} />
+          <TourMetric icon={<WalletCards size={16} />} label="settlement mode" value={data.contractInfo?.settlement_mode ?? "loading"} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TourAiRecruits({ data, onRunDemo, busy, onOpenConsole }: { data: TourData; onRunDemo: (scenario: DemoScenario) => void; busy: string | null; onOpenConsole: (viewMode: ViewMode) => void }) {
+  const rootTasks = data.tasks.filter((task) => task.parent_task_id === null);
+  const childTasks = data.tasks.filter((task) => task.parent_task_id !== null);
+  const graphEdges = data.graph?.edges.length ?? childTasks.length;
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">AI recruits AI</div>
+            <h2 className="mt-1 text-xl font-semibold">Delegation workflow from task graph data</h2>
+          </div>
+          <Button variant="secondary" onClick={() => onOpenConsole("lineage")} icon={<Network size={16} />}>Graph view</Button>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <WorkflowStep index={1} title="Sponsor hires coordinator" value={`${rootTasks.length} root task${rootTasks.length === 1 ? "" : "s"}`} />
+          <WorkflowStep index={2} title="Coordinator hires specialists" value={`${childTasks.length} child task${childTasks.length === 1 ? "" : "s"}`} />
+          <WorkflowStep index={3} title="API returns lineage edges" value={`${graphEdges} edge${graphEdges === 1 ? "" : "s"}`} />
+        </div>
+        <div className="mt-5 grid gap-2">
+          {data.tasks.slice(0, 8).map((task) => (
+            <div key={task.task_id} className="grid gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm md:grid-cols-[1fr_160px_auto] md:items-center">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-xs">{task.task_id}</div>
+                <div className="truncate text-xs text-[var(--muted)]">{task.parent_task_id ? `child of ${task.parent_task_id}` : "root coordination task"}</div>
+              </div>
+              <div className="font-mono text-xs text-[var(--muted)]">{formatLamports(task.payment_lamports)}</div>
+              <StatusBadge status={task.status} />
+            </div>
+          ))}
+          {data.tasks.length === 0 && <TourEmpty action="Run a demo scenario to create parent and child tasks." />}
+        </div>
+      </section>
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">seed scenario</div>
+        <div className="grid gap-2">
+          {DEMO_SCENARIOS.map((scenario) => (
+            <Button key={scenario.slug} variant="secondary" onClick={() => onRunDemo(scenario)} busy={busy === `demo:${scenario.slug}`} icon={<Rocket size={16} />}>
+              {scenario.label}
+            </Button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TourReputation({ data, onActivate, busy }: { data: TourData; onActivate: () => void; busy: string | null }) {
+  const ranked = [...data.agents].sort((a, b) => b.reputation_score - a.reputation_score || Number(b.stake_amount) - Number(a.stake_amount)).slice(0, 6);
+  const stake = data.activation?.stake;
+  return (
+    <TourTwoColumn
+      title="Reputation & staking"
+      kicker="agent aggregates and stake ledger"
+      action={<Button onClick={onActivate} busy={busy === "prototype"} icon={<Zap size={16} />}>Seed stake ledger</Button>}
+      primary={ranked.length > 0 ? ranked.map((agent, index) => (
+        <AgentRankRow key={agent.agent_id} agent={agent} rank={index + 1} />
+      )) : <TourEmpty action="Seed tour data or run a scenario to register ranked agents." />}
+      secondary={
+        <div className="grid gap-3">
+          <TourMetric icon={<BadgeCheck size={16} />} label="avg reputation" value={data.market.avgReputation.toFixed(0)} />
+          <TourMetric icon={<Layers3 size={16} />} label="last stake event" value={stake ? stake.event_type : "none"} />
+          <TourMetric icon={<Coins size={16} />} label="resulting stake" value={stake ? formatLamports(stake.resulting_stake_lamports) : "no ledger record"} />
+        </div>
+      }
+    />
+  );
+}
+
+function TourPayments({ data, onActivate, busy }: { data: TourData; onActivate: () => void; busy: string | null }) {
+  const profile = data.activation?.profile;
+  const accounts = profile?.token_accounts ?? [];
+  const transfers = profile?.token_transfers ?? [];
+  return (
+    <TourTwoColumn
+      title="Payment gateway"
+      kicker="wallet token ledger and settlement history"
+      action={<Button onClick={onActivate} busy={busy === "prototype"} icon={<WalletCards size={16} />}>Seed token ledger</Button>}
+      primary={
+        <div className="grid gap-3 md:grid-cols-2">
+          {accounts.map((account) => (
+            <div key={account.account_id} className="rounded-md border border-[var(--border)] bg-[var(--background)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-semibold">{account.symbol}</div>
+                <span className="rounded-md border border-[var(--border)] px-2 py-1 font-mono text-xs">API ledger</span>
+              </div>
+              <div className="mt-3 font-mono text-lg">{formatLamports(account.balance_lamports)}</div>
+            </div>
+          ))}
+          {accounts.length === 0 && <TourEmpty action="Seed tour data to credit and swap wallet token ledger records." />}
+        </div>
+      }
+      secondary={
+        <div className="grid gap-3">
+          <TourMetric icon={<ShieldCheck size={16} />} label="settlement adapter" value={data.contractInfo?.settlement_mode ?? "loading"} />
+          <TourMetric icon={<BadgeDollarSign size={16} />} label="task settlement events" value={String(data.events.filter((event) => event.kind === "settlement").length)} />
+          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--muted)]">
+            Token records are wallet ledger entries exposed by the SDK/API. This panel does not present them as live SPL transfers.
+          </div>
+          {transfers.slice(0, 4).map((transfer) => (
+            <EventLite key={transfer.transfer_id} label={transfer.transfer_type} value={`${transfer.from_symbol ?? "mint"} to ${transfer.to_symbol}`} meta={formatLamports(transfer.received_lamports)} />
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
+function TourCredentials({ data, onActivate, busy }: { data: TourData; onActivate: () => void; busy: string | null }) {
+  const credentials = data.activation?.profile.skill_credentials ?? (data.activation ? [data.activation.credential] : []);
+  return (
+    <TourTwoColumn
+      title="Skill credentials"
+      kicker="Skill NFT concept as API credential records"
+      action={<Button onClick={onActivate} busy={busy === "prototype"} icon={<BookOpenCheck size={16} />}>Mint credential record</Button>}
+      primary={
+        <div className="grid gap-3 md:grid-cols-2">
+          {credentials.map((credential) => (
+            <div key={credential.credential_id} className="rounded-md border border-[var(--border)] bg-[var(--background)] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold">{credential.name}</div>
+                  <div className="mt-1 font-mono text-xs text-[var(--muted)]">{credential.credential_id}</div>
+                </div>
+                <span className="rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: toneColor("success"), color: toneColor("success") }}>{credential.rarity}</span>
+              </div>
+              <div className="mt-3 grid gap-1 text-xs text-[var(--muted)]">
+                <span>skill: {credential.skill_id}</span>
+                <span>owner: {credential.owner_wallet}</span>
+              </div>
+            </div>
+          ))}
+          {credentials.length === 0 && <TourEmpty action="Seed tour data to create SDK/API skill credential records." />}
+        </div>
+      }
+      secondary={
+        <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--muted)]">
+          The prototype called these Skill NFTs. OmniClaw currently stores credential records through the API; no Metaplex NFT mint is shown as live behavior.
+        </div>
+      }
+    />
+  );
+}
+
+function TourProfile({ data, onActivate, busy }: { data: TourData; onActivate: () => void; busy: string | null }) {
+  const profile = data.activation?.profile;
+  return (
+    <TourTwoColumn
+      title="Personal Center"
+      kicker="wallet profile aggregation"
+      action={<Button onClick={onActivate} busy={busy === "prototype"} icon={<UserCircle size={16} />}>Seed profile</Button>}
+      primary={profile ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <TourMetric icon={<UserCircle size={16} />} label="wallet" value={profile.wallet} />
+          <TourMetric icon={<Network size={16} />} label="agents" value={String(profile.agents.length)} />
+          <TourMetric icon={<GitBranch size={16} />} label="tasks" value={String(profile.tasks.length)} />
+          <TourMetric icon={<BadgeDollarSign size={16} />} label="settlement events" value={String(profile.settlement_events.length)} />
+          <TourMetric icon={<WalletCards size={16} />} label="token transfers" value={String(profile.token_transfers.length)} />
+          <TourMetric icon={<BookOpenCheck size={16} />} label="credentials" value={String(profile.skill_credentials.length)} />
+        </div>
+      ) : <TourEmpty action="Seed tour data to load an aggregated wallet profile." />}
+      secondary={
+        <div className="grid gap-2">
+          {(profile?.tasks ?? data.tasks).slice(0, 5).map((task) => (
+            <EventLite key={task.task_id} label={task.task_id} value={task.status} meta={formatLamports(task.payment_lamports)} />
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
+function TourTwoColumn({ title, kicker, action, primary, secondary }: { title: string; kicker: string; action: React.ReactNode; primary: React.ReactNode; secondary: React.ReactNode }) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">{kicker}</div>
+            <h2 className="mt-1 text-xl font-semibold">{title}</h2>
+          </div>
+          {action}
+        </div>
+        {primary}
+      </section>
+      <aside className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-5">
+        {secondary}
+      </aside>
+    </div>
+  );
+}
+
+function TourMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--muted)]">{icon}{label}</div>
+      <div className="break-all text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function WorkflowStep({ index, title, value }: { index: number; title: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-4">
+      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-md bg-[var(--selected)] font-mono text-sm font-semibold text-[var(--accent)]">{index}</div>
+      <div className="font-semibold">{title}</div>
+      <div className="mt-1 text-sm text-[var(--muted)]">{value}</div>
+    </div>
+  );
+}
+
+function AgentRankRow({ agent, rank }: { agent: AgentDto; rank: number }) {
+  return (
+    <div className="grid gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm md:grid-cols-[44px_1fr_120px_140px] md:items-center">
+      <div className="font-mono text-xs text-[var(--muted)]">#{rank}</div>
+      <div className="min-w-0">
+        <div className="truncate font-semibold">{agent.name}</div>
+        <div className="truncate font-mono text-xs text-[var(--muted)]">{agent.agent_id}</div>
+      </div>
+      <div className="font-mono">{agent.reputation_score.toFixed(0)} rep</div>
+      <div className="font-mono text-xs text-[var(--muted)]">{formatLamports(agent.stake_amount)}</div>
+    </div>
+  );
+}
+
+function EventLite({ label, value, meta }: { label: string; value: string; meta: string }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-sm">
+      <div className="break-all font-semibold">{label}</div>
+      <div className="mt-1 flex flex-wrap justify-between gap-2 text-xs text-[var(--muted)]">
+        <span>{value}</span>
+        <span className="font-mono">{meta}</span>
+      </div>
+    </div>
+  );
+}
+
+function TourEmpty({ action }: { action: string }) {
+  return (
+    <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--background)] p-4 text-sm text-[var(--muted)]">
+      {action}
+    </div>
   );
 }
 
