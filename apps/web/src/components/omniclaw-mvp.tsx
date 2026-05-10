@@ -12,6 +12,7 @@ import {
   Coins,
   GitBranch,
   Layers3,
+  LockKeyhole,
   Network,
   Pause,
   Play,
@@ -90,6 +91,7 @@ type PrototypeFeature = {
   status: "live" | "contract" | "metadata" | "future";
   tone: StatusTone;
   icon: React.ComponentType<{ size?: number; className?: string }>;
+  action: string;
   detail: (info: SolanaContractInfoDto | null) => string;
 };
 
@@ -104,6 +106,18 @@ const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
   { value: "market", label: "Market" },
   { value: "lineage", label: "Lineage" },
 ];
+const FEATURE_STATUS_LABELS: Record<PrototypeFeature["status"], string> = {
+  live: "live SDK/API",
+  contract: "contract-ready",
+  metadata: "metadata only",
+  future: "future disabled",
+};
+const FEATURE_ACTION_LABELS: Record<PrototypeFeature["status"], string> = {
+  live: "Open live graph flow",
+  contract: "Review Anchor boundary",
+  metadata: "Inspect metadata only",
+  future: "Roadmap item disabled",
+};
 
 const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: StatusTone; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
   active: { label: "active", tone: "success", icon: CircleDot },
@@ -168,6 +182,7 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "live",
     tone: "success",
     icon: GitBranch,
+    action: "Run delegation scenario",
     detail: () => "Delegation demos create parent and child tasks through the SDK/API.",
   },
   {
@@ -176,14 +191,16 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "live",
     tone: "success",
     icon: Search,
+    action: "Use discovery ranking",
     detail: () => "Discovery ranks agents by capability, reputation, latency, price, quality, and stake.",
   },
   {
-    label: "SOL escrow payment",
+    label: "SOL escrow boundary",
     source: "README + payment panel",
     status: "contract",
     tone: "info",
     icon: Coins,
+    action: "Review settlement adapter",
     detail: (info) => info?.settlement_mode === "anchor"
       ? "Anchor adapter is active for SOL escrow settlement."
       : "API settlement is mocked while the Anchor contract boundary remains visible.",
@@ -194,14 +211,16 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "live",
     tone: "success",
     icon: BadgeCheck,
+    action: "Inspect reputation events",
     detail: () => "Resolved tasks record reputation events and update agent aggregates.",
   },
   {
-    label: "Cancel, slash, refund",
+    label: "Cancel, slash, refund boundary",
     source: "README contract flow",
     status: "contract",
     tone: "warning",
     icon: ShieldCheck,
+    action: "Review Anchor helper paths",
     detail: () => "Anchor helper exposes cancel and slash paths; the console surfaces refund events through settlement timelines.",
   },
   {
@@ -210,6 +229,7 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "future",
     tone: "warning",
     icon: Activity,
+    action: "Disabled until bidding API exists",
     detail: () => "No bidding API exists yet; current hiring selects workers through discovery and task creation.",
   },
   {
@@ -218,14 +238,16 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "future",
     tone: "danger",
     icon: WalletCards,
+    action: "Disabled until SPL support exists",
     detail: () => "The imported contract README explicitly excludes SPL token support for the MVP.",
   },
   {
-    label: "Stake SOL",
+    label: "Stake amount metadata",
     source: "prototype reputation panel",
     status: "metadata",
     tone: "info",
     icon: Layers3,
+    action: "Read ranking metadata",
     detail: () => "Agents expose stake_amount for ranking, but there is no staking transaction flow yet.",
   },
   {
@@ -234,15 +256,26 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "future",
     tone: "warning",
     icon: BookOpenCheck,
+    action: "Disabled until NFT minting exists",
     detail: () => "Skills are SDK/API records today; NFT minting and ownership are not implemented.",
   },
   {
-    label: "Personal Center",
+    label: "Personal Center data",
     source: "prototype profile panel",
     status: "metadata",
     tone: "info",
     icon: UserCircle,
+    action: "Read actor metadata",
     detail: () => "The console has actor headers and task index views, not authenticated user profiles or payment history.",
+  },
+  {
+    label: "Payment history and swaps",
+    source: "prototype wallet panel",
+    status: "future",
+    tone: "danger",
+    icon: LockKeyhole,
+    action: "Disabled until wallet APIs exist",
+    detail: () => "Settlement events are available per task, but user payment history, swaps, and wallet balances are not implemented.",
   },
 ];
 
@@ -460,7 +493,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
                 </div>
                 <h2 className="text-lg font-semibold">Spin up a delegation market and watch the protocol graph settle.</h2>
                 <p className="mt-1 max-w-[74ch] text-sm text-[var(--muted)]">
-                  These demos register agents, discover specialists by capability, create escrow-backed child tasks, resolve results, then load the graph returned by the API.
+                  These demos register agents, discover specialists by capability, create escrow-backed child tasks, resolve results, then load the graph returned by the API. Wallet and chain transactions stay at the Anchor boundary unless the API reports an active adapter.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -536,6 +569,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
         </section>
 
         <aside className="grid gap-4">
+          <ProtocolBoundaryPanel info={contractInfo} />
           <SettlementPanel info={contractInfo} />
           <PrototypeCoveragePanel info={contractInfo} />
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
@@ -716,10 +750,86 @@ function SettlementPanel({ info }: { info: SolanaContractInfoDto | null }) {
               <span>{info.anchor_commands.typecheck}</span>
             </div>
           </div>
+          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+            <div className="mb-2 text-xs font-medium text-[var(--muted)]">Anchor instruction boundary</div>
+            <div className="flex flex-wrap gap-1.5">
+              {info.instructions.map((instruction) => (
+                <code key={instruction} className="rounded bg-[var(--panel)] px-2 py-1 text-[11px]">
+                  {instruction}
+                </code>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+            <div className="mb-2 text-xs font-medium text-[var(--muted)]">Anchor job status map</div>
+            <div className="grid gap-1.5">
+              {info.job_statuses.map((status) => (
+                <div key={status.value} className="grid grid-cols-[32px_1fr_auto] gap-2 text-xs">
+                  <span className="font-mono text-[var(--muted)]">{status.value}</span>
+                  <span>{status.label}</span>
+                  <span className="font-mono text-[var(--muted)]">{status.api_status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       ) : (
         <div className="p-4 text-sm text-[var(--muted)]">Solana contract metadata loads from the API settlement boundary.</div>
       )}
+    </section>
+  );
+}
+
+function ProtocolBoundaryPanel({ info }: { info: SolanaContractInfoDto | null }) {
+  const grouped = useMemo(() => ({
+    live: PROTOTYPE_FEATURES.filter((feature) => feature.status === "live"),
+    contract: PROTOTYPE_FEATURES.filter((feature) => feature.status === "contract"),
+    metadata: PROTOTYPE_FEATURES.filter((feature) => feature.status === "metadata"),
+    future: PROTOTYPE_FEATURES.filter((feature) => feature.status === "future"),
+  }), []);
+
+  return (
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">protocol boundary</div>
+          <h2 className="mt-1 text-base font-semibold">Prototype ideas, product-honest controls</h2>
+        </div>
+        <LockKeyhole size={17} className="text-[var(--accent)]" />
+      </div>
+      <div className="grid gap-3 p-4">
+        {(Object.keys(grouped) as PrototypeFeature["status"][]).map((status) => (
+          <div key={status} className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{FEATURE_STATUS_LABELS[status]}</span>
+              <span className="font-mono text-xs">{grouped[status].length}</span>
+            </div>
+            <div className="grid gap-2">
+              {grouped[status].map((feature) => {
+                const disabled = feature.status === "future" || feature.status === "metadata" || (feature.status === "contract" && info?.settlement_mode !== "anchor");
+                return (
+                  <button
+                    key={feature.label}
+                    type="button"
+                    disabled={disabled}
+                    aria-label={`${feature.label}: ${FEATURE_ACTION_LABELS[feature.status]}`}
+                    className="grid grid-cols-[18px_1fr_auto] items-center gap-2 rounded border border-[var(--border)] bg-[var(--panel)] px-2.5 py-2 text-left text-xs transition-colors enabled:hover:border-[var(--accent)] enabled:hover:bg-[var(--selected)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <feature.icon size={14} className="text-[var(--muted)]" />
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">{feature.label}</span>
+                      <span className="block truncate text-[var(--muted)]">{feature.action}</span>
+                    </span>
+                    <span className="rounded px-1.5 py-0.5 font-mono" style={{ color: toneColor(feature.tone) }}>
+                      {feature.status}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -759,15 +869,9 @@ function PrototypeCoveragePanel({ info }: { info: SolanaContractInfoDto | null }
 }
 
 function FeatureStatusBadge({ feature }: { feature: PrototypeFeature }) {
-  const labels: Record<PrototypeFeature["status"], string> = {
-    live: "live SDK/API",
-    contract: "contract-ready",
-    metadata: "metadata only",
-    future: "future",
-  };
   return (
     <span className="shrink-0 rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: toneColor(feature.tone), color: toneColor(feature.tone) }}>
-      {labels[feature.status]}
+      {FEATURE_STATUS_LABELS[feature.status]}
     </span>
   );
 }

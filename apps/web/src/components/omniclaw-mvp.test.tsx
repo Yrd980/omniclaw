@@ -59,9 +59,17 @@ describe("OmniClaw web MVP", () => {
     expect(graph.nodes[0]?.taskId).toBe(createdTask.task_id);
     expect(solana.program_id).toBe("292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv");
     expect(await ui.findByText("Anchor-ready mock mode")).toBeTruthy();
+    expect(await ui.findByText("Prototype ideas, product-honest controls")).toBeTruthy();
+    expect(await ui.findByText("Anchor instruction boundary")).toBeTruthy();
+    expect(await ui.findByText("Anchor job status map")).toBeTruthy();
+    expect(await ui.findByText("complete_job")).toBeTruthy();
+    expect(await ui.findByText("cancel_job")).toBeTruthy();
+    expect(await ui.findByText("slash_agent")).toBeTruthy();
+    expect(await ui.findByText("slashed")).toBeTruthy();
+    expect((await ui.findAllByText("failed")).length).toBeGreaterThan(0);
     expect(await ui.findByText("Referenced feature map")).toBeTruthy();
-    expect(await ui.findByText("SPL token gateway")).toBeTruthy();
-    expect(await ui.findByText("Skill NFTs")).toBeTruthy();
+    expect((await ui.findAllByText("SPL token gateway")).length).toBeGreaterThan(0);
+    expect((await ui.findAllByText("Skill NFTs")).length).toBeGreaterThan(0);
     expect(await ui.findByText("The imported contract README explicitly excludes SPL token support for the MVP.")).toBeTruthy();
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
   });
@@ -126,6 +134,33 @@ describe("OmniClaw web MVP", () => {
       expect(graph.nodes).toHaveLength(4);
       expect(graph.edges).toHaveLength(3);
     });
+  });
+
+  test("keeps unsupported prototype features disabled or explicitly metadata-only", async () => {
+    const ctx = createApp();
+    const client = createOmniClawClient({ baseUrl: "http://omniclaw.test", fetch: honoFetch(ctx.app) });
+    const ui = render(<OmniClawMvp client={client} />);
+
+    expect((await ui.findAllByText("future disabled")).length).toBeGreaterThan(0);
+    expect((await ui.findAllByText("metadata only")).length).toBeGreaterThan(0);
+
+    const bidding = await ui.findByRole("button", { name: "Agent bidding: Roadmap item disabled" }) as HTMLButtonElement;
+    const splGateway = await ui.findByRole("button", { name: "SPL token gateway: Roadmap item disabled" }) as HTMLButtonElement;
+    const skillNfts = await ui.findByRole("button", { name: "Skill NFTs: Roadmap item disabled" }) as HTMLButtonElement;
+    const paymentHistory = await ui.findByRole("button", { name: "Payment history and swaps: Roadmap item disabled" }) as HTMLButtonElement;
+    const stakeMetadata = await ui.findByRole("button", { name: "Stake amount metadata: Inspect metadata only" }) as HTMLButtonElement;
+    const personalCenter = await ui.findByRole("button", { name: "Personal Center data: Inspect metadata only" }) as HTMLButtonElement;
+    const solBoundary = await ui.findByRole("button", { name: "SOL escrow boundary: Review Anchor boundary" }) as HTMLButtonElement;
+    const liveDelegation = await ui.findByRole("button", { name: "AI recruits AI: Open live graph flow" }) as HTMLButtonElement;
+
+    expect(bidding.disabled).toBe(true);
+    expect(splGateway.disabled).toBe(true);
+    expect(skillNfts.disabled).toBe(true);
+    expect(paymentHistory.disabled).toBe(true);
+    expect(stakeMetadata.disabled).toBe(true);
+    expect(personalCenter.disabled).toBe(true);
+    expect(solBoundary.disabled).toBe(true);
+    expect(liveDelegation.disabled).toBe(false);
   });
 });
 
