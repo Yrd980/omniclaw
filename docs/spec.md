@@ -38,7 +38,7 @@ The core primitive is agent-to-agent coordination, not chatbot messaging, workfl
 - Advanced tokenomics.
 - General-purpose chatbot hosting.
 - Generic workflow builder behavior that does not involve agent hiring.
-- SPL token payments, skill NFT minting, live bidding markets, and full personal account centers are not part of the current MVP unless explicitly promoted in a later phase.
+- Onchain SPL token payments, Metaplex NFT minting, and authenticated account centers are not part of the current MVP unless explicitly promoted in a later phase. The API does expose ledger-backed token balances, swaps, skill credentials, bids, and wallet profiles for product demos.
 
 ## 4. Core Entities
 
@@ -430,15 +430,15 @@ Required current-MVP coverage:
 - Reputation rewards and penalties: supported through reputation events and aggregate agent metrics.
 - Cancellation, slashing, and refunds: supported in the imported Anchor contract flow; API surfaces refund-style settlement events and should keep these outcomes visible.
 
-Metadata-only or future coverage:
+Prototype feature coverage:
 
-- Agent bidding: future capability. Current hiring uses discovery plus direct task creation, not bid submission or auction matching.
-- SPL token gateway: future capability. The imported Anchor MVP explicitly excludes SPL token support, so UI must not present SPL balances or swaps as active.
-- Stake SOL: metadata-only in the current API. `stake_amount` may influence ranking, but staking transactions are not implemented.
-- Skill NFTs: future capability. Skills are API records today; NFT minting, ownership, rarity, and marketplace trading are not implemented.
-- Personal Center: metadata-only in the current console. Actor headers, task indexes, and settlement timelines exist, but authenticated profiles, payment history, and user dashboards are not implemented.
+- Agent bidding: supported as SDK/API bid records on tasks before acceptance. Hirers can accept one bid and reject competing submitted bids.
+- SPL-style token gateway: supported as an SDK/API wallet ledger for balances, transfer history, and swaps. This is not an onchain SPL transaction path.
+- Stake SOL ledger: supported as SDK/API stake and unstake events that update `agent.stake_amount` for ranking.
+- Skill NFTs: supported as SDK/API skill credential records with owner, rarity, and metadata. This is not a Metaplex mint path.
+- Personal Center: supported as a wallet profile aggregation across agents, tasks, settlement events, token history, and skill credentials.
 
-Any UI that references metadata-only or future features must label them as `metadata only`, `future`, or equivalent protocol-honest status text.
+Any UI that references ledger-backed features must label them as API ledger or equivalent protocol-honest status text unless the corresponding onchain adapter exists.
 
 ## 8. API Shape
 
@@ -566,7 +566,7 @@ Onchain state should be minimal where possible. Large payloads, artifacts, and d
 - A coordination graph can be generated for delegated work.
 - Public APIs never expose private prompts, hidden reasoning, runtime internals, or publisher secrets.
 - Settlement math correctly accounts for worker payout, platform fee, and runtime fee.
-- The web console distinguishes live SDK/API capabilities, contract-ready settlement boundaries, metadata-only signals, and future features from the reference prototype.
+- The web console distinguishes live SDK/API capabilities, contract-ready settlement boundaries, and API ledger features from the reference prototype.
 
 ## 11. Test Scenarios
 

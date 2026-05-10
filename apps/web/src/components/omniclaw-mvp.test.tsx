@@ -68,9 +68,9 @@ describe("OmniClaw web MVP", () => {
     expect(await ui.findByText("slashed")).toBeTruthy();
     expect((await ui.findAllByText("failed")).length).toBeGreaterThan(0);
     expect(await ui.findByText("Referenced feature map")).toBeTruthy();
-    expect((await ui.findAllByText("SPL token gateway")).length).toBeGreaterThan(0);
+    expect((await ui.findAllByText("SPL-style token gateway")).length).toBeGreaterThan(0);
     expect((await ui.findAllByText("Skill NFTs")).length).toBeGreaterThan(0);
-    expect(await ui.findByText("The imported contract README explicitly excludes SPL token support for the MVP.")).toBeTruthy();
+    expect(await ui.findByText("The API now exposes a wallet token ledger for balances, transfer history, and swaps; this is not a Solana SPL transaction.")).toBeTruthy();
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
   });
 
@@ -136,31 +136,39 @@ describe("OmniClaw web MVP", () => {
     });
   });
 
-  test("keeps unsupported prototype features disabled or explicitly metadata-only", async () => {
+  test("activates prototype feature flows through SDK/API-backed records", async () => {
     const ctx = createApp();
     const client = createOmniClawClient({ baseUrl: "http://omniclaw.test", fetch: honoFetch(ctx.app) });
     const ui = render(<OmniClawMvp client={client} />);
 
-    expect((await ui.findAllByText("future disabled")).length).toBeGreaterThan(0);
-    expect((await ui.findAllByText("metadata only")).length).toBeGreaterThan(0);
+    expect((await ui.findAllByText("API ledger")).length).toBeGreaterThan(0);
+    const bidding = await ui.findByRole("button", { name: "Agent bidding: Open live graph flow" }) as HTMLButtonElement;
+    const tokenGateway = await ui.findByRole("button", { name: "SPL-style token gateway: Run ledger flow" }) as HTMLButtonElement;
+    const skillNfts = await ui.findByRole("button", { name: "Skill NFTs: Run ledger flow" }) as HTMLButtonElement;
+    const paymentHistory = await ui.findByRole("button", { name: "Payment history and swaps: Run ledger flow" }) as HTMLButtonElement;
+    const stakeLedger = await ui.findByRole("button", { name: "Stake SOL ledger: Run ledger flow" }) as HTMLButtonElement;
+    const personalCenter = await ui.findByRole("button", { name: "Personal Center: Open live graph flow" }) as HTMLButtonElement;
 
-    const bidding = await ui.findByRole("button", { name: "Agent bidding: Roadmap item disabled" }) as HTMLButtonElement;
-    const splGateway = await ui.findByRole("button", { name: "SPL token gateway: Roadmap item disabled" }) as HTMLButtonElement;
-    const skillNfts = await ui.findByRole("button", { name: "Skill NFTs: Roadmap item disabled" }) as HTMLButtonElement;
-    const paymentHistory = await ui.findByRole("button", { name: "Payment history and swaps: Roadmap item disabled" }) as HTMLButtonElement;
-    const stakeMetadata = await ui.findByRole("button", { name: "Stake amount metadata: Inspect metadata only" }) as HTMLButtonElement;
-    const personalCenter = await ui.findByRole("button", { name: "Personal Center data: Inspect metadata only" }) as HTMLButtonElement;
-    const solBoundary = await ui.findByRole("button", { name: "SOL escrow boundary: Review Anchor boundary" }) as HTMLButtonElement;
-    const liveDelegation = await ui.findByRole("button", { name: "AI recruits AI: Open live graph flow" }) as HTMLButtonElement;
+    expect(bidding.disabled).toBe(false);
+    expect(tokenGateway.disabled).toBe(false);
+    expect(skillNfts.disabled).toBe(false);
+    expect(paymentHistory.disabled).toBe(false);
+    expect(stakeLedger.disabled).toBe(false);
+    expect(personalCenter.disabled).toBe(false);
 
-    expect(bidding.disabled).toBe(true);
-    expect(splGateway.disabled).toBe(true);
-    expect(skillNfts.disabled).toBe(true);
-    expect(paymentHistory.disabled).toBe(true);
-    expect(stakeMetadata.disabled).toBe(true);
-    expect(personalCenter.disabled).toBe(true);
-    expect(solBoundary.disabled).toBe(true);
-    expect(liveDelegation.disabled).toBe(false);
+    fireEvent.click(await ui.findByRole("button", { name: "Activate prototype feature set" }));
+    expect(await ui.findByText(/Prototype feature set activated: bid accepted/)).toBeTruthy();
+    expect(await ui.findByText("Last activation")).toBeTruthy();
+    await waitFor(async () => {
+      const tasks = await client.listTasks();
+      const parent = tasks.tasks.find((task) => task.task_payload.mission === "Activate prototype feature set");
+      expect(parent).toBeTruthy();
+      const bids = await client.listBids(parent!.task_id);
+      expect(bids.bids).toContainEqual(expect.objectContaining({ status: "accepted" }));
+      expect(ctx.store.stakeEvents.size).toBeGreaterThan(0);
+      expect(ctx.store.skillCredentials.size).toBeGreaterThan(0);
+      expect(ctx.store.tokenTransfers.size).toBeGreaterThan(0);
+    });
   });
 });
 

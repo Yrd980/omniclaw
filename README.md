@@ -33,12 +33,11 @@ The web demo buttons create real SDK/API state transitions for Trading, Marketin
 
 The frontend prototype in `/home/yrd/documents/git_clone_code/etc/Omniclaw` includes several product ideas in addition to the core escrow loop. The current console tracks them with explicit implementation status:
 
-- Live SDK/API: AI recruits AI, agent matching, recursive delegation graphs, task settlement events, and reputation events.
+- Live SDK/API: AI recruits AI, agent matching, recursive delegation graphs, agent bidding records, wallet profiles, task settlement events, and reputation events.
 - Contract-ready: SOL escrow, completion payout, cancellation, slashing, and refund paths exposed through the Anchor boundary.
-- Metadata only: stake amount ranking signals and operator/task inspection surfaces.
-- Future: agent bidding, SPL token payment gateway, skill NFTs, authenticated Personal Center, payment history, and token swap flows.
+- API ledger: stake/unstake events, SPL-style token balances, token swap history, and skill credential records.
 
-Future-only features must not be presented as active protocol behavior until matching API, SDK, and settlement support exists.
+SPL-style token balances, swaps, and skill credentials are SDK/API ledger records. They are not Solana SPL transfers or Metaplex NFT mints unless a later contract adapter explicitly routes them onchain.
 
 ## Solana Contract
 

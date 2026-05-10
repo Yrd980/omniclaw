@@ -38,6 +38,7 @@ import {
   type ActorHeaders,
   type AgentDto,
   type AgentStatus,
+  type BidDto,
   type DiscoverAgentsFilters,
   type DiscoveryResultDto,
   type ListTasksFilters,
@@ -48,6 +49,10 @@ import {
   type TaskDto,
   type TaskGraphDto,
   type TaskStatus,
+  type ProfileDto,
+  type SkillCredentialDto,
+  type StakeEventDto,
+  type TokenTransferDto,
 } from "@omniclaw/sdk";
 
 type OmniClawMvpProps = {
@@ -88,11 +93,18 @@ type DemoScenario = {
 type PrototypeFeature = {
   label: string;
   source: string;
-  status: "live" | "contract" | "metadata" | "future";
+  status: "live" | "contract" | "ledger";
   tone: StatusTone;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   action: string;
   detail: (info: SolanaContractInfoDto | null) => string;
+};
+type PrototypeActivation = {
+  bid: BidDto;
+  stake: StakeEventDto;
+  credential: SkillCredentialDto;
+  swap: TokenTransferDto;
+  profile: ProfileDto;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
@@ -109,14 +121,12 @@ const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
 const FEATURE_STATUS_LABELS: Record<PrototypeFeature["status"], string> = {
   live: "live SDK/API",
   contract: "contract-ready",
-  metadata: "metadata only",
-  future: "future disabled",
+  ledger: "API ledger",
 };
 const FEATURE_ACTION_LABELS: Record<PrototypeFeature["status"], string> = {
   live: "Open live graph flow",
   contract: "Review Anchor boundary",
-  metadata: "Inspect metadata only",
-  future: "Roadmap item disabled",
+  ledger: "Run ledger flow",
 };
 
 const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: StatusTone; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
@@ -200,7 +210,7 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "contract",
     tone: "info",
     icon: Coins,
-    action: "Review settlement adapter",
+    action: "Use settlement adapter metadata",
     detail: (info) => info?.settlement_mode === "anchor"
       ? "Anchor adapter is active for SOL escrow settlement."
       : "API settlement is mocked while the Anchor contract boundary remains visible.",
@@ -220,62 +230,62 @@ const PROTOTYPE_FEATURES: PrototypeFeature[] = [
     status: "contract",
     tone: "warning",
     icon: ShieldCheck,
-    action: "Review Anchor helper paths",
+    action: "Use refund-capable settlement path",
     detail: () => "Anchor helper exposes cancel and slash paths; the console surfaces refund events through settlement timelines.",
   },
   {
     label: "Agent bidding",
     source: "prototype workflow",
-    status: "future",
-    tone: "warning",
+    status: "live",
+    tone: "success",
     icon: Activity,
-    action: "Disabled until bidding API exists",
-    detail: () => "No bidding API exists yet; current hiring selects workers through discovery and task creation.",
+    action: "Submit and accept API bids",
+    detail: () => "Agents can submit task bids through the SDK/API; hirers can accept one and close competing bids.",
   },
   {
-    label: "SPL token gateway",
+    label: "SPL-style token gateway",
     source: "prototype payment panel",
-    status: "future",
-    tone: "danger",
+    status: "ledger",
+    tone: "info",
     icon: WalletCards,
-    action: "Disabled until SPL support exists",
-    detail: () => "The imported contract README explicitly excludes SPL token support for the MVP.",
+    action: "Credit and swap token ledger",
+    detail: () => "The API now exposes a wallet token ledger for balances, transfer history, and swaps; this is not a Solana SPL transaction.",
   },
   {
-    label: "Stake amount metadata",
+    label: "Stake SOL ledger",
     source: "prototype reputation panel",
-    status: "metadata",
-    tone: "info",
+    status: "ledger",
+    tone: "success",
     icon: Layers3,
-    action: "Read ranking metadata",
-    detail: () => "Agents expose stake_amount for ranking, but there is no staking transaction flow yet.",
+    action: "Stake or unstake agent ledger",
+    detail: () => "Agents can record stake and unstake events through the SDK/API, updating ranking stake_amount.",
   },
   {
     label: "Skill NFTs",
     source: "prototype NFT panel",
-    status: "future",
-    tone: "warning",
+    status: "ledger",
+    tone: "success",
     icon: BookOpenCheck,
-    action: "Disabled until NFT minting exists",
-    detail: () => "Skills are SDK/API records today; NFT minting and ownership are not implemented.",
+    action: "Mint skill credential records",
+    detail: () => "Skills can mint credential records with owner, rarity, and metadata through the SDK/API.",
   },
   {
-    label: "Personal Center data",
+    label: "Personal Center",
     source: "prototype profile panel",
-    status: "metadata",
-    tone: "info",
+    status: "live",
+    tone: "success",
     icon: UserCircle,
-    action: "Read actor metadata",
-    detail: () => "The console has actor headers and task index views, not authenticated user profiles or payment history.",
+    action: "Load profile and history",
+    detail: () => "Wallet profiles aggregate agents, tasks, settlement events, token history, and skill credentials.",
   },
   {
     label: "Payment history and swaps",
     source: "prototype wallet panel",
-    status: "future",
-    tone: "danger",
+    status: "ledger",
+    tone: "info",
     icon: LockKeyhole,
-    action: "Disabled until wallet APIs exist",
-    detail: () => "Settlement events are available per task, but user payment history, swaps, and wallet balances are not implemented.",
+    action: "Record token swaps and history",
+    detail: () => "Wallet token transfers and swaps are available through SDK/API profile and token endpoints.",
   },
 ];
 
@@ -296,6 +306,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [issue, setIssue] = useState<ApiIssue | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [prototypeActivation, setPrototypeActivation] = useState<PrototypeActivation | null>(null);
 
   const activeActor = useMemo(() => compactActor(actor), [actor]);
 
@@ -409,6 +420,43 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
       setNotice(`${scenario.label} hired ${scenario.specialists.length} specialist agents through live SDK/API calls`);
     }
   }, [activeActor, client, loadTask, run]);
+
+  const runPrototypeActivation = useCallback(async () => {
+    const result = await run("prototype", async (): Promise<PrototypeActivation> => {
+      const scenario = DEMO_SCENARIOS[0];
+      const network = await createDelegationNetwork(client, scenario);
+      const parent = await client.createTask({
+        hirer_agent_id: network.sponsor.agent_id,
+        worker_agent_id: network.coordinator.agent_id,
+        skill_id: network.coordinatorSkill.skill_id,
+        task_payload: { mission: "Activate prototype feature set", runtime_submit_result: false },
+        payment_lamports: "70000000",
+        deadline: futureIso(75),
+      }, { agentId: network.sponsor.agent_id });
+      const firstSpecialist = scenario.specialists[0];
+      const specialist = network.specialists[firstSpecialist.capability];
+      const bid = await client.createBid(parent.task_id, {
+        bidder_agent_id: specialist.agent.agent_id,
+        skill_id: specialist.skill.skill_id,
+        price_lamports: specialist.skill.base_price_lamports,
+        message: firstSpecialist.brief,
+      }, { agentId: specialist.agent.agent_id, wallet: specialist.agent.publisher_wallet });
+      const acceptedBid = await client.acceptBid(parent.task_id, bid.bid_id, { agentId: network.sponsor.agent_id });
+      const stakeResult = await client.stakeAgent(network.coordinator.agent_id, "25000000", { wallet: network.coordinator.publisher_wallet });
+      const credential = await client.mintSkillCredential(specialist.skill.skill_id, {
+        name: `${specialist.skill.name} Skill Credential`,
+        metadata: { source: "prototype activation", capability: firstSpecialist.capability },
+      }, { wallet: specialist.agent.publisher_wallet });
+      await client.creditToken(network.sponsor.publisher_wallet, { symbol: "SOL", amount_lamports: "100000000" }, { wallet: network.sponsor.publisher_wallet });
+      const swap = await client.swapToken(network.sponsor.publisher_wallet, { from_symbol: "SOL", to_symbol: "USDC", amount_lamports: "25000000" }, { wallet: network.sponsor.publisher_wallet });
+      const profile = await client.getProfile(network.sponsor.publisher_wallet);
+      return { bid: acceptedBid, stake: stakeResult.stake_event, credential, swap: swap.transfer, profile };
+    });
+    if (result) {
+      setPrototypeActivation(result);
+      setNotice(`Prototype feature set activated: bid ${result.bid.status}, stake ${formatLamports(result.stake.resulting_stake_lamports)}, credential ${result.credential.rarity}, ${result.profile.token_transfers.length} wallet transfers`);
+    }
+  }, [client, run]);
 
   const refreshData = useCallback(async () => {
     const [discovery, taskList, solanaInfo] = await Promise.all([
@@ -569,7 +617,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
         </section>
 
         <aside className="grid gap-4">
-          <ProtocolBoundaryPanel info={contractInfo} />
+          <ProtocolBoundaryPanel info={contractInfo} activation={prototypeActivation} busy={busy === "prototype"} onActivate={runPrototypeActivation} />
           <SettlementPanel info={contractInfo} />
           <PrototypeCoveragePanel info={contractInfo} />
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
@@ -780,12 +828,11 @@ function SettlementPanel({ info }: { info: SolanaContractInfoDto | null }) {
   );
 }
 
-function ProtocolBoundaryPanel({ info }: { info: SolanaContractInfoDto | null }) {
+function ProtocolBoundaryPanel({ info, activation, busy, onActivate }: { info: SolanaContractInfoDto | null; activation: PrototypeActivation | null; busy: boolean; onActivate: () => void }) {
   const grouped = useMemo(() => ({
     live: PROTOTYPE_FEATURES.filter((feature) => feature.status === "live"),
     contract: PROTOTYPE_FEATURES.filter((feature) => feature.status === "contract"),
-    metadata: PROTOTYPE_FEATURES.filter((feature) => feature.status === "metadata"),
-    future: PROTOTYPE_FEATURES.filter((feature) => feature.status === "future"),
+    ledger: PROTOTYPE_FEATURES.filter((feature) => feature.status === "ledger"),
   }), []);
 
   return (
@@ -798,6 +845,24 @@ function ProtocolBoundaryPanel({ info }: { info: SolanaContractInfoDto | null })
         <LockKeyhole size={17} className="text-[var(--accent)]" />
       </div>
       <div className="grid gap-3 p-4">
+        <Button onClick={onActivate} busy={busy} icon={<Zap size={16} />}>
+          Activate prototype feature set
+        </Button>
+        <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs text-[var(--muted)]">
+          Settlement mode: <span className="font-mono text-[var(--foreground)]">{info?.settlement_mode ?? "loading"}</span>. Ledger features are SDK/API-backed records; Anchor features use the configured settlement adapter.
+        </div>
+        {activation && (
+          <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-xs">
+            <div className="mb-2 font-semibold">Last activation</div>
+            <div className="grid gap-1 text-[var(--muted)]">
+              <span>bid: {activation.bid.status} / {formatLamports(activation.bid.price_lamports)}</span>
+              <span>stake: {formatLamports(activation.stake.resulting_stake_lamports)}</span>
+              <span>credential: {activation.credential.name} ({activation.credential.rarity})</span>
+              <span>swap: {formatLamports(activation.swap.amount_lamports)} {activation.swap.from_symbol} to {activation.swap.to_symbol}</span>
+              <span>profile transfers: {activation.profile.token_transfers.length}</span>
+            </div>
+          </div>
+        )}
         {(Object.keys(grouped) as PrototypeFeature["status"][]).map((status) => (
           <div key={status} className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -806,12 +871,12 @@ function ProtocolBoundaryPanel({ info }: { info: SolanaContractInfoDto | null })
             </div>
             <div className="grid gap-2">
               {grouped[status].map((feature) => {
-                const disabled = feature.status === "future" || feature.status === "metadata" || (feature.status === "contract" && info?.settlement_mode !== "anchor");
                 return (
                   <button
                     key={feature.label}
                     type="button"
-                    disabled={disabled}
+                    disabled={busy}
+                    onClick={onActivate}
                     aria-label={`${feature.label}: ${FEATURE_ACTION_LABELS[feature.status]}`}
                     className="grid grid-cols-[18px_1fr_auto] items-center gap-2 rounded border border-[var(--border)] bg-[var(--panel)] px-2.5 py-2 text-left text-xs transition-colors enabled:hover:border-[var(--accent)] enabled:hover:bg-[var(--selected)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
