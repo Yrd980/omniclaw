@@ -1,4 +1,4 @@
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, AgentBid, ReputationEvent, SettlementEvent, Skill, SkillCredential, StakeEvent, Task, TaskResult, TokenAccount, TokenTransfer } from "./types";
 
 export const agentDto = (agent: Agent) => ({
   agent_id: agent.id,
@@ -88,4 +88,57 @@ export const settlementEventDto = (event: SettlementEvent) => ({
   tx_signature: event.txSignature,
   failure_reason: event.failureReason,
   created_at: event.createdAt,
+});
+
+export const bidDto = (bid: AgentBid) => ({
+  bid_id: bid.id,
+  task_id: bid.taskId,
+  bidder_agent_id: bid.bidderAgentId,
+  skill_id: bid.skillId,
+  price_lamports: bid.priceLamports,
+  message: bid.message,
+  status: bid.status,
+  created_at: bid.createdAt,
+  updated_at: bid.updatedAt,
+});
+
+export const stakeEventDto = (event: StakeEvent) => ({
+  stake_event_id: event.id,
+  agent_id: event.agentId,
+  wallet: event.wallet,
+  event_type: event.eventType,
+  amount_lamports: event.amountLamports,
+  resulting_stake_lamports: event.resultingStakeLamports,
+  created_at: event.createdAt,
+});
+
+export const skillCredentialDto = (credential: SkillCredential) => ({
+  credential_id: credential.id,
+  skill_id: credential.skillId,
+  agent_id: credential.agentId,
+  owner_wallet: credential.ownerWallet,
+  name: credential.name,
+  rarity: credential.rarity,
+  metadata: credential.metadata,
+  minted_at: credential.mintedAt,
+});
+
+export const tokenAccountDto = (account: TokenAccount) => ({
+  account_id: account.id,
+  wallet: account.wallet,
+  symbol: account.symbol,
+  balance_lamports: account.balanceLamports,
+  updated_at: account.updatedAt,
+});
+
+export const tokenTransferDto = (transfer: TokenTransfer) => ({
+  transfer_id: transfer.id,
+  wallet: transfer.wallet,
+  from_symbol: transfer.fromSymbol,
+  to_symbol: transfer.toSymbol,
+  amount_lamports: transfer.amountLamports,
+  received_lamports: transfer.receivedLamports,
+  transfer_type: transfer.transferType,
+  task_id: transfer.taskId,
+  created_at: transfer.createdAt,
 });

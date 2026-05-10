@@ -40,6 +40,10 @@ export const settlementEventTypes = [
   "runtime_fee_paid",
   "settlement_failed",
 ] as const;
+export const bidStatuses = ["submitted", "accepted", "rejected"] as const;
+export const stakeEventTypes = ["staked", "unstaked"] as const;
+export const skillCredentialRarities = ["uncommon", "rare", "epic", "legendary"] as const;
+export const tokenTransferTypes = ["credit", "debit", "swap"] as const;
 
 export const agents = pgTable(
   "agents",
@@ -178,5 +182,94 @@ export const settlementEvents = pgTable(
   (table) => ({
     taskIdIdx: index("settlement_events_task_id_idx").on(table.taskId),
     eventTypeIdx: index("settlement_events_event_type_idx").on(table.eventType),
+  }),
+);
+
+export const agentBids = pgTable(
+  "agent_bids",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    bidderAgentId: text("bidder_agent_id").notNull().references(() => agents.id),
+    skillId: text("skill_id").notNull().references(() => skills.id),
+    priceLamports: text("price_lamports").notNull(),
+    message: text("message").notNull().default(""),
+    status: text("status").notNull().default("submitted"),
+    ...timestamps,
+  },
+  (table) => ({
+    taskIdIdx: index("agent_bids_task_id_idx").on(table.taskId),
+    bidderAgentIdIdx: index("agent_bids_bidder_agent_id_idx").on(table.bidderAgentId),
+    statusIdx: index("agent_bids_status_idx").on(table.status),
+  }),
+);
+
+export const stakeEvents = pgTable(
+  "stake_events",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull().references(() => agents.id),
+    wallet: text("wallet").notNull(),
+    eventType: text("event_type").notNull(),
+    amountLamports: text("amount_lamports").notNull(),
+    resultingStakeLamports: text("resulting_stake_lamports").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    agentIdIdx: index("stake_events_agent_id_idx").on(table.agentId),
+    walletIdx: index("stake_events_wallet_idx").on(table.wallet),
+  }),
+);
+
+export const skillCredentials = pgTable(
+  "skill_credentials",
+  {
+    id: text("id").primaryKey(),
+    skillId: text("skill_id").notNull().references(() => skills.id),
+    agentId: text("agent_id").notNull().references(() => agents.id),
+    ownerWallet: text("owner_wallet").notNull(),
+    name: text("name").notNull(),
+    rarity: text("rarity").notNull(),
+    metadata: jsonb("metadata").notNull(),
+    mintedAt: timestamp("minted_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    skillIdIdx: index("skill_credentials_skill_id_idx").on(table.skillId),
+    agentIdIdx: index("skill_credentials_agent_id_idx").on(table.agentId),
+    ownerWalletIdx: index("skill_credentials_owner_wallet_idx").on(table.ownerWallet),
+  }),
+);
+
+export const tokenAccounts = pgTable(
+  "token_accounts",
+  {
+    id: text("id").primaryKey(),
+    wallet: text("wallet").notNull(),
+    symbol: text("symbol").notNull(),
+    balanceLamports: text("balance_lamports").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    walletSymbolUniqueIdx: uniqueIndex("token_accounts_wallet_symbol_unique").on(table.wallet, table.symbol),
+    walletIdx: index("token_accounts_wallet_idx").on(table.wallet),
+  }),
+);
+
+export const tokenTransfers = pgTable(
+  "token_transfers",
+  {
+    id: text("id").primaryKey(),
+    wallet: text("wallet").notNull(),
+    fromSymbol: text("from_symbol"),
+    toSymbol: text("to_symbol").notNull(),
+    amountLamports: text("amount_lamports").notNull(),
+    receivedLamports: text("received_lamports").notNull(),
+    transferType: text("transfer_type").notNull(),
+    taskId: text("task_id").references(() => tasks.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    walletIdx: index("token_transfers_wallet_idx").on(table.wallet),
+    taskIdIdx: index("token_transfers_task_id_idx").on(table.taskId),
   }),
 );

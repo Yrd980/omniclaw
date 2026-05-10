@@ -1,4 +1,4 @@
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, AgentBid, ReputationEvent, SettlementEvent, Skill, SkillCredential, StakeEvent, Task, TaskResult, TokenAccount, TokenTransfer } from "./types";
 
 export type StoreRepository = {
   getAgent(id: string): Promise<Agent | undefined>;
@@ -22,6 +22,19 @@ export type StoreRepository = {
   listSettlementEventsByFilters(filters: EventFilters): Promise<SettlementEvent[]>;
   listSettlementEventsForTask(taskId: string): Promise<SettlementEvent[]>;
   hasSettlementEvent(taskId: string, eventType: SettlementEvent["eventType"]): Promise<boolean>;
+  saveBid(bid: AgentBid): Promise<void>;
+  getBid(id: string): Promise<AgentBid | undefined>;
+  listBidsByTask(taskId: string): Promise<AgentBid[]>;
+  saveStakeEvent(event: StakeEvent): Promise<void>;
+  listStakeEventsByAgent(agentId: string): Promise<StakeEvent[]>;
+  saveSkillCredential(credential: SkillCredential): Promise<void>;
+  listSkillCredentialsByAgent(agentId: string): Promise<SkillCredential[]>;
+  listSkillCredentialsBySkill(skillId: string): Promise<SkillCredential[]>;
+  saveTokenAccount(account: TokenAccount): Promise<void>;
+  getTokenAccount(wallet: string, symbol: string): Promise<TokenAccount | undefined>;
+  listTokenAccountsByWallet(wallet: string): Promise<TokenAccount[]>;
+  saveTokenTransfer(transfer: TokenTransfer): Promise<void>;
+  listTokenTransfersByWallet(wallet: string): Promise<TokenTransfer[]>;
 };
 
 export type TaskFilters = {
@@ -45,6 +58,11 @@ export type DataStore = StoreRepository & {
   taskResults: Map<string, TaskResult>;
   reputationEvents: Map<string, ReputationEvent>;
   settlementEvents: Map<string, SettlementEvent>;
+  bids: Map<string, AgentBid>;
+  stakeEvents: Map<string, StakeEvent>;
+  skillCredentials: Map<string, SkillCredential>;
+  tokenAccounts: Map<string, TokenAccount>;
+  tokenTransfers: Map<string, TokenTransfer>;
   nextId(prefix: string): string;
   now(): string;
 };
@@ -58,6 +76,11 @@ export const createMemoryStore = (): DataStore => {
     taskResults: new Map(),
     reputationEvents: new Map(),
     settlementEvents: new Map(),
+    bids: new Map(),
+    stakeEvents: new Map(),
+    skillCredentials: new Map(),
+    tokenAccounts: new Map(),
+    tokenTransfers: new Map(),
     nextId(prefix: string) {
       const next = (counters.get(prefix) ?? 0) + 1;
       counters.set(prefix, next);
@@ -132,6 +155,45 @@ export const createMemoryStore = (): DataStore => {
     async hasSettlementEvent(taskId: string, eventType: SettlementEvent["eventType"]) {
       return [...this.settlementEvents.values()].some((event) => event.taskId === taskId && event.eventType === eventType);
     },
+    async saveBid(bid: AgentBid) {
+      this.bids.set(bid.id, bid);
+    },
+    async getBid(id: string) {
+      return this.bids.get(id);
+    },
+    async listBidsByTask(taskId: string) {
+      return [...this.bids.values()].filter((bid) => bid.taskId === taskId);
+    },
+    async saveStakeEvent(event: StakeEvent) {
+      this.stakeEvents.set(event.id, event);
+    },
+    async listStakeEventsByAgent(agentId: string) {
+      return [...this.stakeEvents.values()].filter((event) => event.agentId === agentId);
+    },
+    async saveSkillCredential(credential: SkillCredential) {
+      this.skillCredentials.set(credential.id, credential);
+    },
+    async listSkillCredentialsByAgent(agentId: string) {
+      return [...this.skillCredentials.values()].filter((credential) => credential.agentId === agentId);
+    },
+    async listSkillCredentialsBySkill(skillId: string) {
+      return [...this.skillCredentials.values()].filter((credential) => credential.skillId === skillId);
+    },
+    async saveTokenAccount(account: TokenAccount) {
+      this.tokenAccounts.set(tokenAccountKey(account.wallet, account.symbol), account);
+    },
+    async getTokenAccount(wallet: string, symbol: string) {
+      return this.tokenAccounts.get(tokenAccountKey(wallet, symbol));
+    },
+    async listTokenAccountsByWallet(wallet: string) {
+      return [...this.tokenAccounts.values()].filter((account) => account.wallet === wallet);
+    },
+    async saveTokenTransfer(transfer: TokenTransfer) {
+      this.tokenTransfers.set(transfer.id, transfer);
+    },
+    async listTokenTransfersByWallet(wallet: string) {
+      return [...this.tokenTransfers.values()].filter((transfer) => transfer.wallet === wallet);
+    },
   };
 };
 
@@ -144,3 +206,5 @@ export const filterTasks = (tasks: Task[], filters: TaskFilters): Task[] =>
     (filters.deadlineFrom === undefined || new Date(task.deadline).getTime() >= new Date(filters.deadlineFrom).getTime()) &&
     (filters.deadlineTo === undefined || new Date(task.deadline).getTime() <= new Date(filters.deadlineTo).getTime())
   );
+
+export const tokenAccountKey = (wallet: string, symbol: string) => `${wallet}:${symbol.toUpperCase()}`;

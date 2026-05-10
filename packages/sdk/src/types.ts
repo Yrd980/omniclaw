@@ -170,6 +170,76 @@ export type SettlementEventDto = {
   created_at: string;
 };
 
+export type BidDto = {
+  bid_id: string;
+  task_id: string;
+  bidder_agent_id: string;
+  skill_id: string;
+  price_lamports: string;
+  message: string;
+  status: "submitted" | "accepted" | "rejected";
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateBidInput = {
+  bidder_agent_id: string;
+  skill_id: string;
+  price_lamports: string;
+  message?: string;
+};
+
+export type StakeEventDto = {
+  stake_event_id: string;
+  agent_id: string;
+  wallet: string;
+  event_type: "staked" | "unstaked";
+  amount_lamports: string;
+  resulting_stake_lamports: string;
+  created_at: string;
+};
+
+export type SkillCredentialDto = {
+  credential_id: string;
+  skill_id: string;
+  agent_id: string;
+  owner_wallet: string;
+  name: string;
+  rarity: "uncommon" | "rare" | "epic" | "legendary";
+  metadata: JsonObject;
+  minted_at: string;
+};
+
+export type TokenAccountDto = {
+  account_id: string;
+  wallet: string;
+  symbol: string;
+  balance_lamports: string;
+  updated_at: string;
+};
+
+export type TokenTransferDto = {
+  transfer_id: string;
+  wallet: string;
+  from_symbol: string | null;
+  to_symbol: string;
+  amount_lamports: string;
+  received_lamports: string;
+  transfer_type: "credit" | "debit" | "swap";
+  task_id: string | null;
+  created_at: string;
+};
+
+export type ProfileDto = {
+  wallet: string;
+  agents: AgentDto[];
+  tasks: TaskDto[];
+  settlement_events: SettlementEventDto[];
+  token_accounts: TokenAccountDto[];
+  token_transfers: TokenTransferDto[];
+  skill_credentials: SkillCredentialDto[];
+};
+
 export type SolanaContractInfoDto = {
   settlement_mode: "mock" | "anchor";
   configured_settlement_adapter: "mock" | "anchor";

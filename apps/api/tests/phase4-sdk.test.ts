@@ -67,6 +67,59 @@ describe("Phase 4 SDK client and runtime callback contract", () => {
     expect((await client.getTaskGraph(task.task_id)).rootTaskId).toBe(task.task_id);
   });
 
+  test("implements prototype feature flows with SDK-backed bids, stake, credentials, tokens, swaps, and profile history", async () => {
+    const { client, hirer, worker, skill, store } = await sdkFixture("prototype");
+    const task = await client.createTask({
+      hirer_agent_id: hirer.agent_id,
+      worker_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
+      task_payload: { topic: "prototype features" },
+      payment_lamports: "10000000",
+      deadline: future(),
+    }, { agentId: hirer.agent_id });
+
+    const bid = await client.createBid(task.task_id, {
+      bidder_agent_id: worker.agent_id,
+      skill_id: skill.skill_id,
+      price_lamports: "9000000",
+      message: "I can deliver this with a lower bounty",
+    }, { agentId: worker.agent_id });
+    expect(bid.status).toBe("submitted");
+    expect((await client.acceptBid(task.task_id, bid.bid_id, { agentId: hirer.agent_id })).status).toBe("accepted");
+    expect((await client.listBids(task.task_id)).bids[0]).toEqual(expect.objectContaining({ bid_id: bid.bid_id, status: "accepted" }));
+
+    const stake = await client.stakeAgent(worker.agent_id, "25000000", { wallet: worker.publisher_wallet });
+    expect(stake.agent.stake_amount).toBe("25000000");
+    expect((await client.unstakeAgent(worker.agent_id, "5000000", { wallet: worker.publisher_wallet })).agent.stake_amount).toBe("20000000");
+    expect((await client.listStakeEvents(worker.agent_id)).stake_events).toHaveLength(2);
+
+    const credential = await client.mintSkillCredential(skill.skill_id, {
+      name: "Prototype Skill NFT",
+      rarity: "epic",
+      metadata: { capability: skill.name },
+    }, { wallet: worker.publisher_wallet });
+    expect(credential.owner_wallet).toBe(worker.publisher_wallet);
+    expect((await client.listSkillCredentials(skill.skill_id)).credentials[0].credential_id).toBe(credential.credential_id);
+    expect((await client.listAgentCredentials(worker.agent_id)).credentials[0].credential_id).toBe(credential.credential_id);
+
+    const credit = await client.creditToken(hirer.publisher_wallet, { symbol: "SOL", amount_lamports: "100000000", task_id: task.task_id }, { wallet: hirer.publisher_wallet });
+    expect(credit.account.balance_lamports).toBe("100000000");
+    const swap = await client.swapToken(hirer.publisher_wallet, { from_symbol: "SOL", to_symbol: "USDC", amount_lamports: "30000000" }, { wallet: hirer.publisher_wallet });
+    expect(swap.debited.balance_lamports).toBe("70000000");
+    expect(swap.credited.symbol).toBe("USDC");
+
+    const walletTokens = await client.listWalletTokens(hirer.publisher_wallet);
+    expect(walletTokens.accounts.map((account) => account.symbol).sort()).toEqual(["SOL", "USDC"]);
+    expect(walletTokens.transfers.map((transfer) => transfer.transfer_type)).toEqual(["credit", "swap"]);
+
+    const profile = await client.getProfile(hirer.publisher_wallet);
+    expect(profile.agents.map((agent) => agent.agent_id)).toContain(hirer.agent_id);
+    expect(profile.tasks.map((item) => item.task_id)).toContain(task.task_id);
+    expect(profile.token_transfers).toHaveLength(2);
+    expect(store.bids.size).toBe(1);
+    expect(store.skillCredentials.size).toBe(1);
+  });
+
   test("maps API error envelopes to typed SDK errors for schema, header, body, query, and runtime failures", async () => {
     const { client, hirer, worker, skill } = await sdkFixture("errors", ({ taskDeps }) => {
       taskDeps.runtime = {

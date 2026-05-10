@@ -1,7 +1,7 @@
 import { and, eq, gte, isNull, lte, type SQL } from "drizzle-orm";
-import { agents, reputationEvents, settlementEvents, skills, taskResults, tasks, type DatabaseConnection } from "@omniclaw/db";
+import { agentBids, agents, reputationEvents, settlementEvents, skillCredentials, skills, stakeEvents, taskResults, tasks, tokenAccounts, tokenTransfers, type DatabaseConnection } from "@omniclaw/db";
 import type { DataStore, EventFilters, TaskFilters } from "./store";
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, AgentBid, ReputationEvent, SettlementEvent, Skill, SkillCredential, StakeEvent, Task, TaskResult, TokenAccount, TokenTransfer } from "./types";
 
 type DrizzleDb = DatabaseConnection["db"];
 
@@ -16,6 +16,11 @@ export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
   taskResults: new Map(),
   reputationEvents: new Map(),
   settlementEvents: new Map(),
+  bids: new Map(),
+  stakeEvents: new Map(),
+  skillCredentials: new Map(),
+  tokenAccounts: new Map(),
+  tokenTransfers: new Map(),
   nextId(prefix: string) {
     return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
   },
@@ -121,6 +126,53 @@ export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
       .where(and(eq(settlementEvents.taskId, taskId), eq(settlementEvents.eventType, eventType)))
       .limit(1);
     return Boolean(row);
+  },
+  async saveBid(bid: AgentBid) {
+    await db.insert(agentBids).values(bidToRow(bid)).onConflictDoUpdate({
+      target: agentBids.id,
+      set: bidToRow(bid),
+    });
+  },
+  async getBid(id: string) {
+    const [row] = await db.select().from(agentBids).where(eq(agentBids.id, id)).limit(1);
+    return row ? bidFromRow(row) : undefined;
+  },
+  async listBidsByTask(taskId: string) {
+    return (await db.select().from(agentBids).where(eq(agentBids.taskId, taskId))).map(bidFromRow);
+  },
+  async saveStakeEvent(event: StakeEvent) {
+    await db.insert(stakeEvents).values(stakeEventToRow(event)).onConflictDoNothing();
+  },
+  async listStakeEventsByAgent(agentId: string) {
+    return (await db.select().from(stakeEvents).where(eq(stakeEvents.agentId, agentId))).map(stakeEventFromRow);
+  },
+  async saveSkillCredential(credential: SkillCredential) {
+    await db.insert(skillCredentials).values(skillCredentialToRow(credential)).onConflictDoNothing();
+  },
+  async listSkillCredentialsByAgent(agentId: string) {
+    return (await db.select().from(skillCredentials).where(eq(skillCredentials.agentId, agentId))).map(skillCredentialFromRow);
+  },
+  async listSkillCredentialsBySkill(skillId: string) {
+    return (await db.select().from(skillCredentials).where(eq(skillCredentials.skillId, skillId))).map(skillCredentialFromRow);
+  },
+  async saveTokenAccount(account: TokenAccount) {
+    await db.insert(tokenAccounts).values(tokenAccountToRow(account)).onConflictDoUpdate({
+      target: [tokenAccounts.wallet, tokenAccounts.symbol],
+      set: tokenAccountToRow(account),
+    });
+  },
+  async getTokenAccount(wallet: string, symbol: string) {
+    const [row] = await db.select().from(tokenAccounts).where(and(eq(tokenAccounts.wallet, wallet), eq(tokenAccounts.symbol, symbol))).limit(1);
+    return row ? tokenAccountFromRow(row) : undefined;
+  },
+  async listTokenAccountsByWallet(wallet: string) {
+    return (await db.select().from(tokenAccounts).where(eq(tokenAccounts.wallet, wallet))).map(tokenAccountFromRow);
+  },
+  async saveTokenTransfer(transfer: TokenTransfer) {
+    await db.insert(tokenTransfers).values(tokenTransferToRow(transfer)).onConflictDoNothing();
+  },
+  async listTokenTransfersByWallet(wallet: string) {
+    return (await db.select().from(tokenTransfers).where(eq(tokenTransfers.wallet, wallet))).map(tokenTransferFromRow);
   },
 });
 
@@ -306,5 +358,111 @@ const settlementEventFromRow = (row: typeof settlementEvents.$inferSelect): Sett
   toWallet: row.toWallet,
   txSignature: row.txSignature,
   failureReason: row.failureReason,
+  createdAt: toIso(row.createdAt),
+});
+
+const bidToRow = (bid: AgentBid) => ({
+  id: bid.id,
+  taskId: bid.taskId,
+  bidderAgentId: bid.bidderAgentId,
+  skillId: bid.skillId,
+  priceLamports: bid.priceLamports,
+  message: bid.message,
+  status: bid.status,
+  createdAt: new Date(bid.createdAt),
+  updatedAt: new Date(bid.updatedAt),
+});
+
+const bidFromRow = (row: typeof agentBids.$inferSelect): AgentBid => ({
+  id: row.id,
+  taskId: row.taskId,
+  bidderAgentId: row.bidderAgentId,
+  skillId: row.skillId,
+  priceLamports: row.priceLamports,
+  message: row.message,
+  status: row.status as AgentBid["status"],
+  createdAt: toIso(row.createdAt),
+  updatedAt: toIso(row.updatedAt),
+});
+
+const stakeEventToRow = (event: StakeEvent) => ({
+  id: event.id,
+  agentId: event.agentId,
+  wallet: event.wallet,
+  eventType: event.eventType,
+  amountLamports: event.amountLamports,
+  resultingStakeLamports: event.resultingStakeLamports,
+  createdAt: new Date(event.createdAt),
+});
+
+const stakeEventFromRow = (row: typeof stakeEvents.$inferSelect): StakeEvent => ({
+  id: row.id,
+  agentId: row.agentId,
+  wallet: row.wallet,
+  eventType: row.eventType as StakeEvent["eventType"],
+  amountLamports: row.amountLamports,
+  resultingStakeLamports: row.resultingStakeLamports,
+  createdAt: toIso(row.createdAt),
+});
+
+const skillCredentialToRow = (credential: SkillCredential) => ({
+  id: credential.id,
+  skillId: credential.skillId,
+  agentId: credential.agentId,
+  ownerWallet: credential.ownerWallet,
+  name: credential.name,
+  rarity: credential.rarity,
+  metadata: credential.metadata,
+  mintedAt: new Date(credential.mintedAt),
+});
+
+const skillCredentialFromRow = (row: typeof skillCredentials.$inferSelect): SkillCredential => ({
+  id: row.id,
+  skillId: row.skillId,
+  agentId: row.agentId,
+  ownerWallet: row.ownerWallet,
+  name: row.name,
+  rarity: row.rarity as SkillCredential["rarity"],
+  metadata: jsonObject(row.metadata),
+  mintedAt: toIso(row.mintedAt),
+});
+
+const tokenAccountToRow = (account: TokenAccount) => ({
+  id: account.id,
+  wallet: account.wallet,
+  symbol: account.symbol,
+  balanceLamports: account.balanceLamports,
+  updatedAt: new Date(account.updatedAt),
+});
+
+const tokenAccountFromRow = (row: typeof tokenAccounts.$inferSelect): TokenAccount => ({
+  id: row.id,
+  wallet: row.wallet,
+  symbol: row.symbol,
+  balanceLamports: row.balanceLamports,
+  updatedAt: toIso(row.updatedAt),
+});
+
+const tokenTransferToRow = (transfer: TokenTransfer) => ({
+  id: transfer.id,
+  wallet: transfer.wallet,
+  fromSymbol: transfer.fromSymbol,
+  toSymbol: transfer.toSymbol,
+  amountLamports: transfer.amountLamports,
+  receivedLamports: transfer.receivedLamports,
+  transferType: transfer.transferType,
+  taskId: transfer.taskId,
+  createdAt: new Date(transfer.createdAt),
+});
+
+const tokenTransferFromRow = (row: typeof tokenTransfers.$inferSelect): TokenTransfer => ({
+  id: row.id,
+  wallet: row.wallet,
+  fromSymbol: row.fromSymbol,
+  toSymbol: row.toSymbol,
+  amountLamports: row.amountLamports,
+  receivedLamports: row.receivedLamports,
+  transferType: row.transferType as TokenTransfer["transferType"],
+  taskId: row.taskId,
   createdAt: toIso(row.createdAt),
 });

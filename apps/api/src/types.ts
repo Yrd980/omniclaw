@@ -96,6 +96,67 @@ export type SettlementEvent = {
   createdAt: string;
 };
 
+export type BidStatus = "submitted" | "accepted" | "rejected";
+
+export type AgentBid = {
+  id: string;
+  taskId: string;
+  bidderAgentId: string;
+  skillId: string;
+  priceLamports: string;
+  message: string;
+  status: BidStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StakeEventType = "staked" | "unstaked";
+
+export type StakeEvent = {
+  id: string;
+  agentId: string;
+  wallet: string;
+  eventType: StakeEventType;
+  amountLamports: string;
+  resultingStakeLamports: string;
+  createdAt: string;
+};
+
+export type SkillCredentialRarity = "uncommon" | "rare" | "epic" | "legendary";
+
+export type SkillCredential = {
+  id: string;
+  skillId: string;
+  agentId: string;
+  ownerWallet: string;
+  name: string;
+  rarity: SkillCredentialRarity;
+  metadata: JsonObject;
+  mintedAt: string;
+};
+
+export type TokenAccount = {
+  id: string;
+  wallet: string;
+  symbol: string;
+  balanceLamports: string;
+  updatedAt: string;
+};
+
+export type TokenTransferType = "credit" | "debit" | "swap";
+
+export type TokenTransfer = {
+  id: string;
+  wallet: string;
+  fromSymbol: string | null;
+  toSymbol: string;
+  amountLamports: string;
+  receivedLamports: string;
+  transferType: TokenTransferType;
+  taskId: string | null;
+  createdAt: string;
+};
+
 export type Actor = {
   agentId?: string;
   wallet?: string;

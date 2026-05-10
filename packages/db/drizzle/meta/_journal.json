@@ -15,6 +15,13 @@
       "when": 1778252040000,
       "tag": "0001_agent_rate_precision",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778444700000,
+      "tag": "0002_prototype_feature_records",
+      "breakpoints": true
     }
   ]
 }

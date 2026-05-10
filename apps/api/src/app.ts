@@ -5,13 +5,14 @@ import { createRuntimeAdapterFromEnv } from "./adapters/runtime-factory";
 import { createSettlementAdapterFromEnv } from "./adapters/settlement-factory";
 import { solanaContractInfo } from "./adapters/solana-contract";
 import { DEFAULT_DISCOVERY_RANKING_CONFIG, type DiscoveryRankingConfig } from "./config";
-import { agentDto, reputationEventDto, settlementEventDto, skillDto, taskDto, taskResultDto } from "./dto";
+import { agentDto, bidDto, reputationEventDto, settlementEventDto, skillCredentialDto, skillDto, stakeEventDto, taskDto, taskResultDto, tokenAccountDto, tokenTransferDto } from "./dto";
 import { ApiError } from "./errors";
 import { createPostgresStore } from "./postgres-store";
 import { createMemoryStore, type DataStore } from "./store";
 import { registerAgent, registerSkill } from "./services/agents";
 import { actorFromHeaders } from "./services/authorization";
 import { discoverAgents } from "./services/discovery";
+import { acceptBid, createBid, creditToken, getProfile, listBids, mintSkillCredential, swapToken, updateStake } from "./services/prototype-features";
 import { acceptTask, createTask, expireTask, getTaskGraph, rejectTask, resolveTask, submitResult, type TaskServiceDeps } from "./services/tasks";
 import {
   optionalAgentStatus,
@@ -174,6 +175,23 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   app.post("/tasks/:taskId/reject", async (c) => c.json(taskDto(await rejectTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId")))));
   app.post("/tasks/:taskId/expire", async (c) => c.json(taskDto(await expireTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId")))));
 
+  app.post("/tasks/:taskId/bids", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const bid = await createBid(store, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), {
+      bidder_agent_id: requireString(body, "bidder_agent_id"),
+      skill_id: requireString(body, "skill_id"),
+      price_lamports: requireLamports(body, "price_lamports"),
+      message: optionalString(body, "message"),
+    });
+    return c.json(bidDto(bid), 201);
+  });
+
+  app.get("/tasks/:taskId/bids", async (c) => c.json({ bids: (await listBids(store, c.req.param("taskId"))).map(bidDto) }));
+
+  app.post("/tasks/:taskId/bids/:bidId/accept", async (c) =>
+    c.json(bidDto(await acceptBid(store, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), c.req.param("bidId"))))
+  );
+
   app.post("/tasks/:taskId/result", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
     const result = await submitResult(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), {
@@ -214,7 +232,98 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     });
   });
 
+  app.post("/agents/:agentId/stake", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const result = await updateStake(store, actorFromHeaders(c.req.raw.headers), c.req.param("agentId"), requireLamports(body, "amount_lamports"), "stake");
+    return c.json({ agent: agentDto(result.agent), stake_event: stakeEventDto(result.event) });
+  });
+
+  app.post("/agents/:agentId/unstake", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const result = await updateStake(store, actorFromHeaders(c.req.raw.headers), c.req.param("agentId"), requireLamports(body, "amount_lamports"), "unstake");
+    return c.json({ agent: agentDto(result.agent), stake_event: stakeEventDto(result.event) });
+  });
+
+  app.get("/agents/:agentId/stake-events", async (c) =>
+    c.json({ stake_events: (await store.listStakeEventsByAgent(c.req.param("agentId"))).map(stakeEventDto) })
+  );
+
+  app.post("/skills/:skillId/credentials", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const credential = await mintSkillCredential(store, actorFromHeaders(c.req.raw.headers), c.req.param("skillId"), {
+      name: optionalString(body, "name"),
+      rarity: optionalCredentialRarity(body, "rarity"),
+      metadata: optionalJsonObject(body, "metadata"),
+    });
+    return c.json(skillCredentialDto(credential), 201);
+  });
+
+  app.get("/skills/:skillId/credentials", async (c) =>
+    c.json({ credentials: (await store.listSkillCredentialsBySkill(c.req.param("skillId"))).map(skillCredentialDto) })
+  );
+
+  app.get("/agents/:agentId/credentials", async (c) =>
+    c.json({ credentials: (await store.listSkillCredentialsByAgent(c.req.param("agentId"))).map(skillCredentialDto) })
+  );
+
+  app.post("/wallets/:wallet/tokens/credit", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const result = await creditToken(
+      store,
+      actorFromHeaders(c.req.raw.headers),
+      c.req.param("wallet"),
+      requireString(body, "symbol"),
+      requireLamports(body, "amount_lamports"),
+      optionalNullableString(body, "task_id") ?? null,
+    );
+    return c.json({ account: tokenAccountDto(result.account), transfer: tokenTransferDto(result.transfer) }, 201);
+  });
+
+  app.post("/wallets/:wallet/tokens/swap", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const result = await swapToken(
+      store,
+      actorFromHeaders(c.req.raw.headers),
+      c.req.param("wallet"),
+      requireString(body, "from_symbol"),
+      requireString(body, "to_symbol"),
+      requireLamports(body, "amount_lamports"),
+    );
+    return c.json({ debited: tokenAccountDto(result.debited), credited: tokenAccountDto(result.credited), transfer: tokenTransferDto(result.transfer) });
+  });
+
+  app.get("/wallets/:wallet/tokens", async (c) =>
+    c.json({
+      accounts: (await store.listTokenAccountsByWallet(c.req.param("wallet"))).map(tokenAccountDto),
+      transfers: (await store.listTokenTransfersByWallet(c.req.param("wallet"))).map(tokenTransferDto),
+    })
+  );
+
+  app.get("/profiles/:wallet", async (c) => {
+    const profile = await getProfile(store, c.req.param("wallet"));
+    return c.json({
+      wallet: profile.wallet,
+      agents: profile.agents.map(agentDto),
+      tasks: profile.tasks.map(taskDto),
+      settlement_events: profile.settlementEvents.map(settlementEventDto),
+      token_accounts: profile.tokenAccounts.map(tokenAccountDto),
+      token_transfers: profile.tokenTransfers.map(tokenTransferDto),
+      skill_credentials: profile.skillCredentials.map(skillCredentialDto),
+    });
+  });
+
   return { app, store, taskDeps };
+};
+
+const optionalCredentialRarity = (body: Record<string, unknown>, field: string) => {
+  const value = body[field];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "uncommon" || value === "rare" || value === "epic" || value === "legendary") {
+    return value;
+  }
+  throw new ApiError(400, "INVALID_BODY", `${field} is invalid`);
 };
 
 const requiredNumber = (body: Record<string, unknown>, field: string): number => {

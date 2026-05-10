@@ -2,12 +2,15 @@ import { OmniClawApiError } from "./errors";
 import type {
   ActorHeaders,
   AgentDto,
+  BidDto,
+  CreateBidInput,
   CreateTaskInput,
   DiscoverAgentsFilters,
   DiscoveryResultDto,
   EventFilters,
   ListTasksFilters,
   OmniClawApiErrorEnvelope,
+  ProfileDto,
   RegisterAgentInput,
   RegisterSkillInput,
   ReputationEventDto,
@@ -15,11 +18,15 @@ import type {
   SettlementEventDto,
   SolanaContractInfoDto,
   SkillDto,
+  SkillCredentialDto,
+  StakeEventDto,
   SubmitResultInput,
   TaskDetailDto,
   TaskDto,
   TaskGraphDto,
   TaskResultDto,
+  TokenAccountDto,
+  TokenTransferDto,
 } from "./types";
 
 export type OmniClawClientOptions = {
@@ -95,6 +102,18 @@ export class OmniClawClient {
     return this.request("POST", `/tasks/${encodeURIComponent(taskId)}/expire`, {}, actor);
   }
 
+  createBid(taskId: string, input: CreateBidInput, actor?: ActorHeaders): Promise<BidDto> {
+    return this.request("POST", `/tasks/${encodeURIComponent(taskId)}/bids`, input, actor);
+  }
+
+  listBids(taskId: string, actor?: ActorHeaders): Promise<{ bids: BidDto[] }> {
+    return this.request("GET", `/tasks/${encodeURIComponent(taskId)}/bids`, undefined, actor);
+  }
+
+  acceptBid(taskId: string, bidId: string, actor?: ActorHeaders): Promise<BidDto> {
+    return this.request("POST", `/tasks/${encodeURIComponent(taskId)}/bids/${encodeURIComponent(bidId)}/accept`, {}, actor);
+  }
+
   getTaskGraph(taskId: string, actor?: ActorHeaders): Promise<TaskGraphDto> {
     return this.request("GET", `/tasks/${encodeURIComponent(taskId)}/graph`, undefined, actor);
   }
@@ -109,6 +128,46 @@ export class OmniClawClient {
 
   listReputationEvents(filters: EventFilters = {}, actor?: ActorHeaders): Promise<{ reputation_events: ReputationEventDto[] }> {
     return this.request("GET", `/reputation-events${query(filters)}`, undefined, actor);
+  }
+
+  stakeAgent(agentId: string, amount_lamports: string, actor?: ActorHeaders): Promise<{ agent: AgentDto; stake_event: StakeEventDto }> {
+    return this.request("POST", `/agents/${encodeURIComponent(agentId)}/stake`, { amount_lamports }, actor);
+  }
+
+  unstakeAgent(agentId: string, amount_lamports: string, actor?: ActorHeaders): Promise<{ agent: AgentDto; stake_event: StakeEventDto }> {
+    return this.request("POST", `/agents/${encodeURIComponent(agentId)}/unstake`, { amount_lamports }, actor);
+  }
+
+  listStakeEvents(agentId: string, actor?: ActorHeaders): Promise<{ stake_events: StakeEventDto[] }> {
+    return this.request("GET", `/agents/${encodeURIComponent(agentId)}/stake-events`, undefined, actor);
+  }
+
+  mintSkillCredential(skillId: string, input: Partial<Pick<SkillCredentialDto, "name" | "rarity" | "metadata">> = {}, actor?: ActorHeaders): Promise<SkillCredentialDto> {
+    return this.request("POST", `/skills/${encodeURIComponent(skillId)}/credentials`, input, actor);
+  }
+
+  listSkillCredentials(skillId: string, actor?: ActorHeaders): Promise<{ credentials: SkillCredentialDto[] }> {
+    return this.request("GET", `/skills/${encodeURIComponent(skillId)}/credentials`, undefined, actor);
+  }
+
+  listAgentCredentials(agentId: string, actor?: ActorHeaders): Promise<{ credentials: SkillCredentialDto[] }> {
+    return this.request("GET", `/agents/${encodeURIComponent(agentId)}/credentials`, undefined, actor);
+  }
+
+  creditToken(wallet: string, input: { symbol: string; amount_lamports: string; task_id?: string | null }, actor?: ActorHeaders): Promise<{ account: TokenAccountDto; transfer: TokenTransferDto }> {
+    return this.request("POST", `/wallets/${encodeURIComponent(wallet)}/tokens/credit`, input, actor);
+  }
+
+  swapToken(wallet: string, input: { from_symbol: string; to_symbol: string; amount_lamports: string }, actor?: ActorHeaders): Promise<{ debited: TokenAccountDto; credited: TokenAccountDto; transfer: TokenTransferDto }> {
+    return this.request("POST", `/wallets/${encodeURIComponent(wallet)}/tokens/swap`, input, actor);
+  }
+
+  listWalletTokens(wallet: string, actor?: ActorHeaders): Promise<{ accounts: TokenAccountDto[]; transfers: TokenTransferDto[] }> {
+    return this.request("GET", `/wallets/${encodeURIComponent(wallet)}/tokens`, undefined, actor);
+  }
+
+  getProfile(wallet: string, actor?: ActorHeaders): Promise<ProfileDto> {
+    return this.request("GET", `/profiles/${encodeURIComponent(wallet)}`, undefined, actor);
   }
 
   private async request<T>(method: string, path: string, body?: unknown, actor?: ActorHeaders): Promise<T> {
