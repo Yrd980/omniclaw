@@ -51,6 +51,7 @@ describe("OmniClaw web MVP", () => {
     expect((await ui.findAllByText(worker.name, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
     expect(await ui.findByText("Autonomous agent hiring graph")).toBeTruthy();
     expect(await ui.findByText("Protocol event stream")).toBeTruthy();
+    expect(ui.container.querySelector(".react-flow")?.parentElement?.className).toContain("h-full");
     expect((await ui.findAllByText(createdTask.task_id, {}, { timeout: 10_000 })).length).toBeGreaterThan(0);
     expect(await ui.findByText("Protocol snapshot")).toBeTruthy();
     expect(ui.queryByText("Raw DTO")).toBeNull();
@@ -63,7 +64,6 @@ describe("OmniClaw web MVP", () => {
     expect(detail.reputation_events.length).toBe(1);
     expect(graph.nodes[0]?.taskId).toBe(createdTask.task_id);
     expect(solana.program_id).toBe("292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv");
-    expect((await ui.findAllByText("failed")).length).toBeGreaterThan(0);
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
 
     fireEvent.click(await ui.findByRole("button", { name: "Ocean Demo" }));

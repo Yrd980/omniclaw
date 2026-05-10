@@ -28,8 +28,6 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import {
   createOmniClawClient,
   OmniClawApiError,
@@ -109,9 +107,6 @@ type TourData = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
-const AGENT_STATUSES: AgentStatus[] = ["active", "paused", "suspended"];
-const TASK_STATUSES: TaskStatus[] = ["created", "escrow_locked", "accepted", "in_progress", "submitted", "completed", "failed", "expired", "disputed", "cancelled"];
-const ROLE_OPTIONS: Array<NonNullable<ActorHeaders["role"]> | ""> = ["", "admin", "evaluator"];
 const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
   { value: "all", label: "All" },
   { value: "network", label: "Network" },
@@ -188,9 +183,7 @@ const DEMO_SCENARIOS: DemoScenario[] = [
   },
 ];
 export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
-  const [apiUrl, setApiUrl] = useState(API_URL);
-  const client = useMemo(() => injectedClient ?? createOmniClawClient({ baseUrl: apiUrl }), [apiUrl, injectedClient]);
-  const [actor, setActor] = useState<ActorHeaders>({ wallet: "wallet_operator", agentId: "", role: undefined });
+  const client = useMemo(() => injectedClient ?? createOmniClawClient({ baseUrl: API_URL }), [injectedClient]);
   const [filters, setFilters] = useState<DiscoverAgentsFilters>({ capability: "market_research", status: "active" });
   const [taskFilters, setTaskFilters] = useState<ListTasksFilters>({});
   const [results, setResults] = useState<DiscoveryResultDto[]>([]);
@@ -207,7 +200,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>("console");
   const [tourSection, setTourSection] = useState<TourSectionId>("hero");
 
-  const activeActor = useMemo(() => compactActor(actor), [actor]);
+  const activeActor = useMemo<ActorHeaders>(() => ({ wallet: "wallet_operator" }), []);
 
   const run = useCallback(async <T,>(label: string, action: () => Promise<T>) => {
     setBusy(label);
@@ -405,36 +398,13 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <header className="border-b border-[var(--border)] bg-[var(--panel)]">
-        <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)_auto] xl:items-center">
+        <div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div>
             <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw live delegation</div>
             <h1 className="mt-1 text-xl font-semibold">Autonomous agent hiring graph</h1>
           </div>
-          <div className="grid gap-2 md:grid-cols-4">
-            <Field label="api">
-              <Input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} disabled={Boolean(injectedClient)} />
-            </Field>
-            <Field label="capability">
-              <Input value={filters.capability ?? ""} onChange={(event) => setFilters({ ...filters, capability: event.target.value })} />
-            </Field>
-            <Field label="agent status">
-              <Select value={filters.status ?? ""} onChange={(event) => setFilters({ ...filters, status: event.target.value as AgentStatus || undefined })}>
-                <option value="">any</option>
-                {AGENT_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-              </Select>
-            </Field>
-            <Field label="task status">
-              <Select value={taskFilters.status ?? ""} onChange={(event) => setTaskFilters({ ...taskFilters, status: event.target.value as TaskStatus || undefined })}>
-                <option value="">any</option>
-                {TASK_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-              </Select>
-            </Field>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          <div className="flex flex-wrap items-center gap-2">
             <SurfaceSwitch value={surfaceMode} onChange={setSurfaceMode} />
-            <Select aria-label="actor role" value={actor.role ?? ""} onChange={(event) => setActor({ ...actor, role: event.target.value ? event.target.value as ActorHeaders["role"] : undefined })} className="w-[120px]">
-              {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role || "observer"}</option>)}
-            </Select>
             <Button onClick={refreshData} busy={busy === "discovery" || busy === "tasks"} icon={<RefreshCw size={16} />}>Refresh</Button>
           </div>
         </div>
@@ -492,8 +462,8 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
 
           {(issue || notice) && <Feedback issue={issue} notice={notice} />}
 
-          <div className="min-h-[720px]">
-            <div className="relative min-h-[420px]">
+          <div className="h-[calc(100vh-252px)] min-h-[560px]">
+            <div className="relative h-full">
               {flow.nodes.length > 0 ? (
                 <ReactFlow
                   nodes={flow.nodes}
@@ -951,15 +921,6 @@ function SegmentedControl({ value, onChange }: { value: ViewMode; onChange: (val
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="grid gap-1 text-xs font-medium text-[var(--muted)]">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
 function Signal({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm">
@@ -1336,14 +1297,6 @@ function buildMarketSignals(results: DiscoveryResultDto[], tasks: TaskDto[]) {
   const latencyPressure = clamp(average(results.map((result) => result.skill.estimated_latency_ms)) / 150, 0, 100);
   const totalPayment = tasks.reduce((sum, task) => sum + Number(task.payment_lamports), 0).toFixed(0);
   return { avgReputation, avgQuality, avgSuccess, latencyPressure, totalPayment };
-}
-
-function compactActor(actor: ActorHeaders): ActorHeaders {
-  return {
-    wallet: actor.wallet || undefined,
-    agentId: actor.agentId || undefined,
-    role: actor.role || undefined,
-  };
 }
 
 function cleanFilters(filters: DiscoverAgentsFilters): DiscoverAgentsFilters {
