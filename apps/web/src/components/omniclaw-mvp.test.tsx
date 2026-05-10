@@ -59,6 +59,10 @@ describe("OmniClaw web MVP", () => {
     expect(graph.nodes[0]?.taskId).toBe(createdTask.task_id);
     expect(solana.program_id).toBe("292wuc4zRvyEk1of5Ek8EDMtH9oRjbU1HKaoNTRWm3fv");
     expect(await ui.findByText("Anchor-ready mock mode")).toBeTruthy();
+    expect(await ui.findByText("Referenced feature map")).toBeTruthy();
+    expect(await ui.findByText("SPL token gateway")).toBeTruthy();
+    expect(await ui.findByText("Skill NFTs")).toBeTruthy();
+    expect(await ui.findByText("The imported contract README explicitly excludes SPL token support for the MVP.")).toBeTruthy();
     expect((await ui.findAllByText("worker_paid")).length).toBeGreaterThan(0);
   });
 

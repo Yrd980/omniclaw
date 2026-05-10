@@ -5,10 +5,13 @@ import {
   Activity,
   AlertTriangle,
   BadgeDollarSign,
+  BadgeCheck,
+  BookOpenCheck,
   Circle,
   CircleDot,
   Coins,
   GitBranch,
+  Layers3,
   Network,
   Pause,
   Play,
@@ -19,6 +22,8 @@ import {
   ShieldCheck,
   Sparkles,
   Timer,
+  UserCircle,
+  WalletCards,
   Zap,
 } from "lucide-react";
 import type React from "react";
@@ -78,6 +83,14 @@ type DemoScenario = {
     capability: string;
     brief: string;
   }>;
+};
+type PrototypeFeature = {
+  label: string;
+  source: string;
+  status: "live" | "contract" | "metadata" | "future";
+  tone: StatusTone;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  detail: (info: SolanaContractInfoDto | null) => string;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
@@ -146,6 +159,90 @@ const DEMO_SCENARIOS: DemoScenario[] = [
       { name: "Solidity Agent", capability: "solidity_development", brief: "Implement smart-contract primitives" },
       { name: "Growth Agent", capability: "growth_strategy", brief: "Design activation and distribution experiments" },
     ],
+  },
+];
+const PROTOTYPE_FEATURES: PrototypeFeature[] = [
+  {
+    label: "AI recruits AI",
+    source: "prototype section",
+    status: "live",
+    tone: "success",
+    icon: GitBranch,
+    detail: () => "Delegation demos create parent and child tasks through the SDK/API.",
+  },
+  {
+    label: "Agent matching",
+    source: "prototype workflow",
+    status: "live",
+    tone: "success",
+    icon: Search,
+    detail: () => "Discovery ranks agents by capability, reputation, latency, price, quality, and stake.",
+  },
+  {
+    label: "SOL escrow payment",
+    source: "README + payment panel",
+    status: "contract",
+    tone: "info",
+    icon: Coins,
+    detail: (info) => info?.settlement_mode === "anchor"
+      ? "Anchor adapter is active for SOL escrow settlement."
+      : "API settlement is mocked while the Anchor contract boundary remains visible.",
+  },
+  {
+    label: "Reputation rewards",
+    source: "README + rankings panel",
+    status: "live",
+    tone: "success",
+    icon: BadgeCheck,
+    detail: () => "Resolved tasks record reputation events and update agent aggregates.",
+  },
+  {
+    label: "Cancel, slash, refund",
+    source: "README contract flow",
+    status: "contract",
+    tone: "warning",
+    icon: ShieldCheck,
+    detail: () => "Anchor helper exposes cancel and slash paths; the console surfaces refund events through settlement timelines.",
+  },
+  {
+    label: "Agent bidding",
+    source: "prototype workflow",
+    status: "future",
+    tone: "warning",
+    icon: Activity,
+    detail: () => "No bidding API exists yet; current hiring selects workers through discovery and task creation.",
+  },
+  {
+    label: "SPL token gateway",
+    source: "prototype payment panel",
+    status: "future",
+    tone: "danger",
+    icon: WalletCards,
+    detail: () => "The imported contract README explicitly excludes SPL token support for the MVP.",
+  },
+  {
+    label: "Stake SOL",
+    source: "prototype reputation panel",
+    status: "metadata",
+    tone: "info",
+    icon: Layers3,
+    detail: () => "Agents expose stake_amount for ranking, but there is no staking transaction flow yet.",
+  },
+  {
+    label: "Skill NFTs",
+    source: "prototype NFT panel",
+    status: "future",
+    tone: "warning",
+    icon: BookOpenCheck,
+    detail: () => "Skills are SDK/API records today; NFT minting and ownership are not implemented.",
+  },
+  {
+    label: "Personal Center",
+    source: "prototype profile panel",
+    status: "metadata",
+    tone: "info",
+    icon: UserCircle,
+    detail: () => "The console has actor headers and task index views, not authenticated user profiles or payment history.",
   },
 ];
 
@@ -440,6 +537,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
 
         <aside className="grid gap-4">
           <SettlementPanel info={contractInfo} />
+          <PrototypeCoveragePanel info={contractInfo} />
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
         </aside>
       </div>
@@ -623,6 +721,54 @@ function SettlementPanel({ info }: { info: SolanaContractInfoDto | null }) {
         <div className="p-4 text-sm text-[var(--muted)]">Solana contract metadata loads from the API settlement boundary.</div>
       )}
     </section>
+  );
+}
+
+function PrototypeCoveragePanel({ info }: { info: SolanaContractInfoDto | null }) {
+  return (
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">prototype coverage</div>
+          <h2 className="mt-1 text-base font-semibold">Referenced feature map</h2>
+        </div>
+        <BookOpenCheck size={17} className="text-[var(--accent)]" />
+      </div>
+      <div className="grid gap-2 p-4">
+        {PROTOTYPE_FEATURES.map((feature) => {
+          const Icon = feature.icon;
+          return (
+            <div key={feature.label} className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span style={{ color: toneColor(feature.tone) }}>
+                    <Icon size={15} />
+                  </span>
+                  <span className="truncate text-sm font-semibold">{feature.label}</span>
+                </div>
+                <FeatureStatusBadge feature={feature} />
+              </div>
+              <div className="text-xs text-[var(--muted)]">{feature.detail(info)}</div>
+              <div className="font-mono text-[11px] text-[var(--muted)]">source: {feature.source}</div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FeatureStatusBadge({ feature }: { feature: PrototypeFeature }) {
+  const labels: Record<PrototypeFeature["status"], string> = {
+    live: "live SDK/API",
+    contract: "contract-ready",
+    metadata: "metadata only",
+    future: "future",
+  };
+  return (
+    <span className="shrink-0 rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: toneColor(feature.tone), color: toneColor(feature.tone) }}>
+      {labels[feature.status]}
+    </span>
   );
 }
 

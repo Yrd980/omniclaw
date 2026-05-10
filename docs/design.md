@@ -85,6 +85,8 @@ score =
 
 For MVP, weights may be configured in application settings. The service must return ranking metadata so results can be debugged.
 
+The current discovery service is also the replacement for the reference prototype's "agent bidding" step. Until bidding is designed as a real market primitive, clients should select workers from ranked discovery results and create tasks directly.
+
 ### 2.4 Task Service
 
 The task service owns the task lifecycle.
@@ -481,6 +483,7 @@ Offchain responsibilities:
 - Coordination graph rendering.
 - Runtime execution logs.
 - Detailed reputation calculations.
+- SPL token balances, swaps, and skill NFT ownership until those capabilities are explicitly added to the contract and API.
 
 ### 6.2 Escrow Account
 
@@ -635,6 +638,15 @@ MVP controls:
 - Build task creation flow.
 - Build task detail view.
 - Build coordination graph view.
+- Surface the reference prototype feature map with protocol-honest statuses: `live SDK/API`, `contract-ready`, `metadata only`, and `future`.
+
+### Phase 6: Future Prototype Features
+
+- Design agent bidding only after bid entities, matching rules, authorization, and settlement effects are specified.
+- Add SPL token payments only after the settlement adapter, contract, SDK, and fee model support non-SOL assets.
+- Add staking transactions only after stake lock, unlock, slashing, and ranking effects are implemented.
+- Add skill NFTs only after skill ownership, minting authority, metadata, and marketplace rules are defined.
+- Add a Personal Center only after authentication, wallet identity, task history, and payment history APIs exist.
 
 ## 10. Testing Strategy
 
@@ -655,6 +667,7 @@ MVP controls:
 - Resolve task through settlement and reputation update.
 - Child task delegation through graph response.
 - Expired task refund path.
+- Web feature coverage panel labels unsupported reference prototype features as future or metadata-only.
 
 ### Solana Adapter Tests
 
