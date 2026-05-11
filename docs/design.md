@@ -45,6 +45,26 @@ Responsibilities:
 
 The SDK should wrap API calls and signing flows so agents can participate without hand-building protocol requests.
 
+### 2.1.1 Web Product Workspace
+
+The web app presents the SDK/API loop as a user-facing autonomous labor product rather than a developer console.
+
+Primary workspace views:
+
+- Marketplace: discover ranked worker agents by capability, reputation, price, and status.
+- Active Deal: inspect the current escrow-backed job, coordinator or worker, deadline, next protocol state, settlement timeline, and child jobs.
+- Coordination Graph: render the active sponsor, coordinator, specialist workers, capability edges, escrow flow, settlement path, and reputation changes with product-oriented modes.
+- Agents: inspect worker reputation, success rate, stake, price, and credential or ledger prototype records.
+- Settlement: verify escrow, payout, refund, API ledger, runtime, wallet, and Solana readiness boundaries.
+
+The first viewport should expose scenario cards for the current demo networks:
+
+- Trading Network: generate a BTC execution plan.
+- Marketing Swarm: launch a multilingual campaign.
+- Founder Stack: ship an MVP launch plan.
+
+These scenario cards must continue to create real SDK/API state transitions for agent registration, discovery, parent-child tasks, settlement events, reputation events, and graph queries. Manual task creation, arbitrary IDs, low-level filters, and JSON payload editing remain available in an Advanced panel for protocol verification, but they should not dominate the product evaluation flow.
+
 ### 2.2 API Service
 
 The API service is the primary offchain coordinator.

@@ -66,7 +66,8 @@ type ApiIssue = {
   details?: unknown;
 };
 
-type ViewMode = "all" | "network" | "lifecycle" | "market" | "lineage";
+type ViewMode = "coordination" | "marketplace" | "settlement" | "reputation";
+type WorkspacePage = "marketplace" | "deal" | "graph" | "agents" | "settlement";
 type EventItem = {
   id: string;
   taskId: string;
@@ -106,12 +107,11 @@ type DraftTask = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
-const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "network", label: "Network" },
-  { value: "lifecycle", label: "Lifecycle" },
-  { value: "market", label: "Market" },
-  { value: "lineage", label: "Lineage" },
+const VIEW_MODES: Array<{ value: ViewMode; label: string; description: string }> = [
+  { value: "coordination", label: "Coordination", description: "Sponsor, coordinator, specialist delegation" },
+  { value: "marketplace", label: "Marketplace", description: "Ranked workers and capability prices" },
+  { value: "settlement", label: "Settlement", description: "Escrow state, payout, refund path" },
+  { value: "reputation", label: "Reputation", description: "Trust changes and worker history" },
 ];
 const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: StatusTone; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
   active: { label: "active", tone: "success", icon: CircleDot },
@@ -182,7 +182,9 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusDto | null>(null);
   const [productCapabilities, setProductCapabilities] = useState<ProductCapabilitiesDto | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [activePage, setActivePage] = useState<WorkspacePage>("marketplace");
+  const [viewMode, setViewMode] = useState<ViewMode>("coordination");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draftTask, setDraftTask] = useState<DraftTask>({
     hirerAgentId: "",
     workerAgentId: "",
@@ -300,8 +302,9 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
         setTasks([result.parent, ...taskList.tasks]);
       }
       await loadTask(result.parent.task_id);
-      setViewMode("lineage");
-      setNotice(`${scenario.label} hired ${scenario.specialists.length} specialist agents through live SDK/API calls`);
+      setViewMode("coordination");
+      setActivePage("deal");
+      setNotice(`${scenario.label} opened an escrow-backed deal and hired ${scenario.specialists.length} specialist workers through live SDK/API calls`);
     }
   }, [activeActor, client, loadTask, run]);
 
@@ -414,108 +417,493 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <header className="border-b border-[var(--border)] bg-[var(--panel)]">
-        <div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-3 px-4 py-3">
+      <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[color:oklch(0.15_0.024_248/0.96)]">
+        <div className="mx-auto grid max-w-[1800px] gap-3 px-4 py-3 lg:grid-cols-[260px_1fr_auto] lg:items-center">
           <div>
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw live delegation</div>
-            <h1 className="mt-1 text-xl font-semibold">Autonomous agent hiring graph</h1>
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw</div>
+            <h1 className="mt-1 text-xl font-semibold">Autonomous Agent Labor Network</h1>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <WorkspaceNav value={activePage} onChange={setActivePage} />
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Button variant="secondary" onClick={() => setAdvancedOpen((open) => !open)} icon={<Search size={16} />}>Advanced</Button>
             <Button onClick={refreshData} busy={busy === "discovery" || busy === "tasks"} icon={<RefreshCw size={16} />}>Refresh</Button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="min-h-[calc(100vh-112px)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
-          <div className="border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-              <div>
-                <div className="mb-1 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                  <Coins size={13} /> SDK demo flows
-                </div>
-                <h2 className="text-base font-semibold">Create a live delegation graph, then inspect the selected task.</h2>
+      <div className="mx-auto grid max-w-[1800px] gap-4 px-4 py-4">
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-4">
+            <div className="mb-4 grid gap-2">
+              <div className="inline-flex w-fit items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-xs font-medium text-[var(--muted)]">
+                <Coins size={13} /> live SDK/API demo loop
               </div>
-              <div className="flex flex-wrap gap-2 lg:justify-end">
-                {DEMO_SCENARIOS.map((scenario) => (
-                  <Button
-                    key={scenario.slug}
-                    variant="secondary"
-                    onClick={() => void runDemoScenario(scenario)}
-                    busy={busy === `demo:${scenario.slug}`}
-                    icon={<Rocket size={16} style={{ color: toneColor(scenario.accent) }} />}
-                  >
-                    {scenario.label}
-                  </Button>
-                ))}
-              </div>
+              <h2 className="max-w-[760px] text-2xl font-semibold leading-tight">Discover capable workers, lock escrow, delegate through a coordinator, then verify settlement and reputation.</h2>
+              <p className="max-w-[720px] text-sm leading-6 text-[var(--muted)]">
+                OmniClaw is the coordination layer for agent-to-agent labor. Runtime execution and Solana settlement boundaries stay labeled while the API proves hiring, child jobs, payouts, and reputation events.
+              </p>
             </div>
+            <ScenarioLauncher scenarios={DEMO_SCENARIOS} busy={busy} onRun={(scenario) => void runDemoScenario(scenario)} />
           </div>
-          <ControlDeck
-            filters={filters}
-            taskFilters={taskFilters}
-            draftTask={draftTask}
-            results={results}
-            selectedResult={selectedResult}
-            busy={busy}
-            onFiltersChange={setFilters}
-            onTaskFiltersChange={setTaskFilters}
-            onDraftTaskChange={setDraftTask}
-            onRefresh={() => void refreshData()}
-            onCreateTask={() => void createDraftTask()}
-          />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
-            <SegmentedControl value={viewMode} onChange={setViewMode} />
-            <div className="flex flex-wrap items-center gap-2">
-              <Signal icon={<Network size={15} />} label="agents" value={String(agents.length)} />
-              <Signal icon={<GitBranch size={15} />} label="tasks" value={String(tasks.length)} />
-              <Signal icon={<ShieldCheck size={15} />} label="settlement" value={contractInfo?.settlement_mode ?? "mock"} />
-              <Signal icon={<Activity size={15} />} label="runtime" value={runtimeStatus?.adapter_mode ?? "mock"} />
-            </div>
-          </div>
-
-          {(issue || notice) && <Feedback issue={issue} notice={notice} />}
-
-          <div className="h-[calc(100vh-252px)] min-h-[560px]">
-            <div className="relative h-full">
-              {flow.nodes.length > 0 ? (
-                <ReactFlow
-                  key={`${viewMode}:${graph?.rootTaskId ?? "market"}:${flow.nodes.length}:${flow.edges.length}`}
-                  nodes={flow.nodes}
-                  edges={flow.edges}
-                  fitView
-                  fitViewOptions={{ padding: 0.22 }}
-                  onNodeClick={(_, node) => {
-                    if (node.type === "task" || String(node.id).startsWith("task:")) {
-                      void loadTask(String(node.id).replace(/^task:/, ""));
-                    }
-                  }}
-                >
-                  <Background color="var(--flow-grid)" gap={28} />
-                  <MiniMap pannable zoomable nodeColor={(node) => node.data?.tone ? toneColor(String(node.data.tone) as StatusTone) : toneColor("neutral")} />
-                  <Controls />
-                </ReactFlow>
-              ) : (
-                <EmptyVisualization />
-              )}
-            </div>
-          </div>
+          <DealBrief task={activeTask} market={market} agents={agents} events={events} contractInfo={contractInfo} runtimeStatus={runtimeStatus} />
         </section>
 
-        <aside className="grid gap-4">
-          <ProtocolActions activation={prototypeActivation} busy={busy === "prototype"} onActivate={runPrototypeActivation} />
-          <ProductReadiness capabilities={productCapabilities} />
-          <ConsoleSummary market={market} contractInfo={contractInfo} runtimeStatus={runtimeStatus} capabilities={productCapabilities} />
-          <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
-        </aside>
+        {(issue || notice) && <Feedback issue={issue} notice={notice} />}
+
+        {advancedOpen && (
+          <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
+            <div className="border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">advanced protocol controls</div>
+            </div>
+            <ControlDeck
+              filters={filters}
+              taskFilters={taskFilters}
+              draftTask={draftTask}
+              results={results}
+              selectedResult={selectedResult}
+              busy={busy}
+              onFiltersChange={setFilters}
+              onTaskFiltersChange={setTaskFilters}
+              onDraftTaskChange={setDraftTask}
+              onRefresh={() => void refreshData()}
+              onCreateTask={() => void createDraftTask()}
+            />
+          </section>
+        )}
+
+        {activePage === "marketplace" && (
+          <MarketplaceView
+            results={results}
+            market={market}
+            filters={filters}
+            busy={busy}
+            onFiltersChange={setFilters}
+            onRefresh={() => void refreshData()}
+            onRunScenario={(scenario) => void runDemoScenario(scenario)}
+          />
+        )}
+
+        {activePage === "deal" && (
+          <ActiveDealView
+            task={activeTask}
+            detail={detail}
+            events={events}
+            tasks={tasks}
+            onSelectTask={loadTask}
+            onOpenGraph={() => setActivePage("graph")}
+          />
+        )}
+
+        {activePage === "graph" && (
+          <GraphWorkspace
+            flow={flow}
+            viewMode={viewMode}
+            graphKey={`${viewMode}:${graph?.rootTaskId ?? "market"}:${flow.nodes.length}:${flow.edges.length}`}
+            agentsCount={agents.length}
+            tasksCount={tasks.length}
+            contractInfo={contractInfo}
+            runtimeStatus={runtimeStatus}
+            onModeChange={setViewMode}
+            onSelectTask={loadTask}
+          />
+        )}
+
+        {activePage === "agents" && (
+          <AgentsView results={results} agents={agents} activation={prototypeActivation} busy={busy === "prototype"} onActivate={runPrototypeActivation} />
+        )}
+
+        {activePage === "settlement" && (
+          <SettlementView
+            task={activeTask}
+            events={events}
+            market={market}
+            contractInfo={contractInfo}
+            runtimeStatus={runtimeStatus}
+            capabilities={productCapabilities}
+            activation={prototypeActivation}
+            busy={busy === "prototype"}
+            onActivate={runPrototypeActivation}
+          />
+        )}
+
+        <BoundaryStatus contractInfo={contractInfo} runtimeStatus={runtimeStatus} capabilities={productCapabilities} />
       </div>
     </main>
   );
 }
 
+function WorkspaceNav({ value, onChange }: { value: WorkspacePage; onChange: (page: WorkspacePage) => void }) {
+  const pages: Array<{ value: WorkspacePage; label: string; icon: React.ReactNode }> = [
+    { value: "marketplace", label: "Marketplace", icon: <Search size={15} /> },
+    { value: "deal", label: "Active Deal", icon: <ShieldCheck size={15} /> },
+    { value: "graph", label: "Coordination Graph", icon: <Network size={15} /> },
+    { value: "agents", label: "Agents", icon: <UserCircle size={15} /> },
+    { value: "settlement", label: "Settlement", icon: <WalletCards size={15} /> },
+  ];
+  return (
+    <nav className="flex flex-wrap gap-1" aria-label="workspace navigation">
+      {pages.map((page) => (
+        <button
+          key={page.value}
+          type="button"
+          onClick={() => onChange(page.value)}
+          className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${value === page.value ? "bg-[var(--accent)] text-[var(--accent-foreground)]" : "text-[var(--muted)] hover:bg-[var(--panel-strong)] hover:text-[var(--foreground)]"}`}
+        >
+          {page.icon}
+          {page.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function ScenarioLauncher({ scenarios, busy, onRun }: { scenarios: DemoScenario[]; busy: string | null; onRun: (scenario: DemoScenario) => void }) {
+  const scenarioCopy: Record<string, { job: string; escrow: string; outcome: string }> = {
+    trading: { job: "Generate a BTC execution plan", escrow: "90M parent escrow", outcome: "risk-scored execution brief" },
+    marketing: { job: "Launch a multilingual campaign", escrow: "90M parent escrow", outcome: "localized launch package" },
+    founder: { job: "Ship an MVP launch plan", escrow: "90M parent escrow", outcome: "product, contract, growth plan" },
+  };
+  return (
+    <div className="grid gap-3 lg:grid-cols-3">
+      {scenarios.map((scenario) => {
+        const copy = scenarioCopy[scenario.slug] ?? { job: scenario.mission, escrow: "escrow-backed", outcome: "delegated result" };
+        return (
+          <button
+            key={scenario.slug}
+            type="button"
+            onClick={() => onRun(scenario)}
+            className="group grid min-h-[220px] gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] p-4 text-left transition-colors hover:border-[var(--accent)] hover:bg-[var(--canvas)]"
+          >
+            <span className="flex items-start justify-between gap-3">
+              <span>
+                <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">{scenario.label}</span>
+                <span className="mt-1 block text-lg font-semibold">{copy.job}</span>
+              </span>
+              <Rocket size={18} style={{ color: toneColor(scenario.accent) }} />
+            </span>
+            <span className="grid gap-2 text-sm text-[var(--muted)]">
+              <span>Coordinator: <strong className="text-[var(--foreground)]">{scenario.coordinatorName}</strong></span>
+              <span>Workers: <strong className="text-[var(--foreground)]">{scenario.specialists.length} specialists</strong></span>
+              <span>Escrow: <strong className="text-[var(--foreground)]">{copy.escrow}</strong></span>
+              <span>Outcome: <strong className="text-[var(--foreground)]">{copy.outcome}</strong></span>
+            </span>
+            <span className="mt-auto inline-flex h-9 w-fit items-center gap-2 rounded-md border border-[var(--border)] px-3 text-sm font-semibold text-[var(--foreground)] group-hover:border-[var(--accent)]">
+              {busy === `demo:${scenario.slug}` ? "Hiring workers..." : "Start hiring flow"}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DealBrief({
+  task,
+  market,
+  agents,
+  events,
+  contractInfo,
+  runtimeStatus,
+}: {
+  task: TaskDto | null;
+  market: ReturnType<typeof buildMarketSignals>;
+  agents: AgentDto[];
+  events: EventItem[];
+  contractInfo: SolanaContractInfoDto | null;
+  runtimeStatus: RuntimeStatusDto | null;
+}) {
+  return (
+    <section className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">active deal</div>
+          <h2 className="mt-1 text-lg font-semibold">{task ? "Escrow-backed coordination in view" : "No deal selected"}</h2>
+        </div>
+        {task ? <StatusBadge status={task.status} /> : <ActivityIcon />}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Metric label="mission escrow" value={task ? formatLamports(task.payment_lamports) : "start a scenario"} />
+        <Metric label="worker payout" value={task ? formatLamports(task.worker_payout_lamports) : "pending"} />
+        <Metric label="ranked workers" value={String(agents.length)} />
+        <Metric label="event proofs" value={String(events.length)} />
+      </div>
+      <div className="grid gap-2 text-sm text-[var(--muted)]">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+          <span>Settlement</span>
+          <strong className="text-[var(--foreground)]">{contractInfo?.settlement_mode ?? "loading"}</strong>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+          <span>Runtime</span>
+          <strong className="text-[var(--foreground)]">{runtimeStatus?.adapter_mode ?? "loading"}</strong>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+          <span>Average reputation</span>
+          <strong className="text-[var(--foreground)]">{market.avgReputation.toFixed(0)}</strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MarketplaceView({
+  results,
+  market,
+  filters,
+  busy,
+  onFiltersChange,
+  onRefresh,
+  onRunScenario,
+}: {
+  results: DiscoveryResultDto[];
+  market: ReturnType<typeof buildMarketSignals>;
+  filters: DiscoverAgentsFilters;
+  busy: string | null;
+  onFiltersChange: (filters: DiscoverAgentsFilters) => void;
+  onRefresh: () => void;
+  onRunScenario: (scenario: DemoScenario) => void;
+}) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">marketplace</div>
+            <h2 className="mt-1 text-lg font-semibold">Find autonomous workers</h2>
+          </div>
+          <Search size={18} className="text-[var(--accent)]" />
+        </div>
+        <div className="grid gap-3">
+          <Field label="capability">
+            <Input value={String(filters.capability ?? "")} onChange={(event) => onFiltersChange({ ...filters, capability: event.target.value })} placeholder="market_research" />
+          </Field>
+          <Field label="minimum reputation">
+            <Input value={String(filters.reputation_gt ?? "")} onChange={(event) => onFiltersChange({ ...filters, reputation_gt: event.target.value })} placeholder="80" />
+          </Field>
+          <Field label="max escrow price">
+            <Input value={filters.max_price_lamports ?? ""} onChange={(event) => onFiltersChange({ ...filters, max_price_lamports: event.target.value })} placeholder="100000000" />
+          </Field>
+          <Button onClick={onRefresh} busy={busy === "discovery"} icon={<RefreshCw size={16} />}>Update worker market</Button>
+        </div>
+        <div className="mt-4 grid gap-2">
+          <Metric label="average reputation" value={market.avgReputation.toFixed(0)} />
+          <Metric label="average success" value={`${market.avgSuccess.toFixed(0)}%`} />
+          <Metric label="total escrow in view" value={formatLamports(market.totalPayment)} />
+        </div>
+      </div>
+      <div className="grid gap-3">
+        <div className="grid gap-3 md:grid-cols-3">
+          {DEMO_SCENARIOS.map((scenario) => (
+            <Button key={scenario.slug} variant="secondary" onClick={() => onRunScenario(scenario)} busy={busy === `demo:${scenario.slug}`} icon={<Rocket size={16} style={{ color: toneColor(scenario.accent) }} />}>
+              {scenario.label}
+            </Button>
+          ))}
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {results.map((result) => <WorkerCard key={result.skill.skill_id} result={result} />)}
+          {results.length === 0 && <EmptyPanel title="No workers match" body="Adjust marketplace filters or start a scenario to register coordinator and specialist agents." />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ActiveDealView({ task, detail, events, tasks, onSelectTask, onOpenGraph }: { task: TaskDto | null; detail: TaskDetailDto | null; events: EventItem[]; tasks: TaskDto[]; onSelectTask: (taskId: string) => void; onOpenGraph: () => void }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">active deal</div>
+            <h2 className="mt-1 text-lg font-semibold">{task ? "Mission, escrow, and next protocol state" : "Start a scenario to open a deal"}</h2>
+          </div>
+          <Button variant="secondary" onClick={onOpenGraph} icon={<Network size={16} />}>Open graph</Button>
+        </div>
+        {task ? (
+          <div className="grid gap-4 p-4">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <Metric label="job id" value={task.task_id} />
+              <Metric label="escrow" value={formatLamports(task.payment_lamports)} />
+              <Metric label="deadline" value={formatDate(task.deadline)} />
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              <Metric label="sponsor" value={task.hirer_agent_id} />
+              <Metric label="coordinator or worker" value={task.worker_agent_id} />
+              <Metric label="skill" value={task.skill_id} />
+              <Metric label="next state" value={nextProtocolState(task.status)} />
+            </div>
+            <SettlementTimeline events={events} />
+          </div>
+        ) : <EmptyPanel title="No active deal" body="Use a scenario card to create a sponsor, coordinator, specialist workers, escrow-backed tasks, settlement events, and reputation updates." />}
+      </div>
+      <Inspector task={task} detail={detail} events={events} onSelectTask={onSelectTask} tasks={tasks} />
+    </section>
+  );
+}
+
+function GraphWorkspace({
+  flow,
+  viewMode,
+  graphKey,
+  agentsCount,
+  tasksCount,
+  contractInfo,
+  runtimeStatus,
+  onModeChange,
+  onSelectTask,
+}: {
+  flow: { nodes: Node[]; edges: Edge[] };
+  viewMode: ViewMode;
+  graphKey: string;
+  agentsCount: number;
+  tasksCount: number;
+  contractInfo: SolanaContractInfoDto | null;
+  runtimeStatus: RuntimeStatusDto | null;
+  onModeChange: (mode: ViewMode) => void;
+  onSelectTask: (taskId: string) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
+        <SegmentedControl value={viewMode} onChange={onModeChange} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Signal icon={<Network size={15} />} label="workers" value={String(agentsCount)} />
+          <Signal icon={<GitBranch size={15} />} label="jobs" value={String(tasksCount)} />
+          <Signal icon={<ShieldCheck size={15} />} label="settlement" value={contractInfo?.settlement_mode ?? "mock"} />
+          <Signal icon={<Activity size={15} />} label="runtime" value={runtimeStatus?.adapter_mode ?? "mock"} />
+        </div>
+      </div>
+      <div className="h-[calc(100vh-300px)] min-h-[620px]">
+        {flow.nodes.length > 0 ? (
+          <ReactFlow
+            key={graphKey}
+            nodes={flow.nodes}
+            edges={flow.edges}
+            fitView
+            fitViewOptions={{ padding: 0.22 }}
+            onNodeClick={(_, node) => {
+              if (String(node.id).startsWith("task:")) {
+                onSelectTask(String(node.id).replace(/^task:/, ""));
+              }
+            }}
+          >
+            <Background color="var(--flow-grid)" gap={28} />
+            <MiniMap pannable zoomable nodeColor={(node) => node.data?.tone ? toneColor(String(node.data.tone) as StatusTone) : toneColor("neutral")} />
+            <Controls />
+          </ReactFlow>
+        ) : <EmptyVisualization />}
+      </div>
+    </section>
+  );
+}
+
+function AgentsView({ results, agents, activation, busy, onActivate }: { results: DiscoveryResultDto[]; agents: AgentDto[]; activation: PrototypeActivation | null; busy: boolean; onActivate: () => void }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[1fr_380px]">
+      <div className="grid gap-3 lg:grid-cols-2">
+        {results.map((result) => <WorkerCard key={result.skill.skill_id} result={result} />)}
+        {results.length === 0 && agents.map((agent) => (
+          <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-4">
+            <AgentNode agent={agent} />
+          </div>
+        ))}
+      </div>
+      <ProtocolActions activation={activation} busy={busy} onActivate={onActivate} />
+    </section>
+  );
+}
+
+function SettlementView({ task, events, market, contractInfo, runtimeStatus, capabilities, activation, busy, onActivate }: { task: TaskDto | null; events: EventItem[]; market: ReturnType<typeof buildMarketSignals>; contractInfo: SolanaContractInfoDto | null; runtimeStatus: RuntimeStatusDto | null; capabilities: ProductCapabilitiesDto | null; activation: PrototypeActivation | null; busy: boolean; onActivate: () => void }) {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">settlement</div>
+            <h2 className="mt-1 text-lg font-semibold">Escrow, payout, and reputation proof</h2>
+          </div>
+          {task && <StatusBadge status={task.status} />}
+        </div>
+        <div className="grid gap-4 p-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Metric label="escrow locked" value={task ? formatLamports(task.payment_lamports) : "pending"} />
+            <Metric label="worker paid" value={task ? formatLamports(task.worker_payout_lamports) : "pending"} />
+            <Metric label="market escrow" value={formatLamports(market.totalPayment)} />
+          </div>
+          <SettlementTimeline events={events} />
+        </div>
+      </div>
+      <div className="grid gap-4">
+        <ConsoleSummary market={market} contractInfo={contractInfo} runtimeStatus={runtimeStatus} capabilities={capabilities} />
+        <ProtocolActions activation={activation} busy={busy} onActivate={onActivate} />
+      </div>
+    </section>
+  );
+}
+
+function BoundaryStatus({ contractInfo, runtimeStatus, capabilities }: { contractInfo: SolanaContractInfoDto | null; runtimeStatus: RuntimeStatusDto | null; capabilities: ProductCapabilitiesDto | null }) {
+  return (
+    <footer className="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--panel)] p-3 text-xs text-[var(--muted)] md:grid-cols-4">
+      <div><strong className="text-[var(--foreground)]">SDK/API:</strong> live local state transitions</div>
+      <div><strong className="text-[var(--foreground)]">Runtime:</strong> {runtimeStatus?.adapter_mode ?? "loading"} boundary</div>
+      <div><strong className="text-[var(--foreground)]">Solana:</strong> {contractInfo?.settlement_mode ?? "loading"}</div>
+      <div><strong className="text-[var(--foreground)]">Wallet:</strong> {capabilities?.boundaries.wallet_auth ?? "loading"}</div>
+    </footer>
+  );
+}
+
+function WorkerCard({ result }: { result: DiscoveryResultDto }) {
+  return (
+    <article className="rounded-lg border border-[var(--border)] bg-[var(--panel)] p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">{result.agent.name}</h3>
+          <p className="mt-1 font-mono text-xs text-[var(--muted)]">{result.agent.agent_id}</p>
+        </div>
+        <StatusBadge status={result.agent.status} />
+      </div>
+      <p className="mb-3 text-sm leading-6 text-[var(--muted)]">{result.skill.description}</p>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <NodeStat label="rep" value={result.agent.reputation_score} />
+        <NodeStat label="success" value={`${result.agent.success_rate}%`} />
+        <NodeStat label="price" value={compactLamports(result.skill.base_price_lamports)} />
+        <NodeStat label="rank" value={result.ranking.score.toFixed(2)} />
+      </div>
+    </article>
+  );
+}
+
+function SettlementTimeline({ events }: { events: EventItem[] }) {
+  const fallback: EventItem[] = [
+    { id: "escrow", taskId: "pending", kind: "settlement", label: "escrow locked", value: "waiting", tone: "info", timestamp: new Date().toISOString() },
+    { id: "submit", taskId: "pending", kind: "settlement", label: "work submitted", value: "waiting", tone: "warning", timestamp: new Date().toISOString() },
+    { id: "reputation", taskId: "pending", kind: "reputation", label: "reputation update", value: "waiting", tone: "neutral", timestamp: new Date().toISOString() },
+  ];
+  const rows = events.length > 0 ? events : fallback;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Settlement timeline</h3>
+        <Zap size={15} className="text-[var(--muted)]" />
+      </div>
+      <div className="grid gap-2">
+        {rows.map((event) => <EventRow key={event.id} event={event} />)}
+      </div>
+    </div>
+  );
+}
+
+function EmptyPanel({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-[var(--border)] bg-[var(--panel)] p-6 text-sm">
+      <h3 className="font-semibold">{title}</h3>
+      <p className="mt-2 leading-6 text-[var(--muted)]">{body}</p>
+    </div>
+  );
+}
+
 function SegmentedControl({ value, onChange }: { value: ViewMode; onChange: (value: ViewMode) => void }) {
   return (
-    <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--background)] p-1" aria-label="visualization view">
+    <div className="flex flex-wrap rounded-md border border-[var(--border)] bg-[var(--background)] p-1" aria-label="visualization view">
       {VIEW_MODES.map((mode) => (
         <button
           key={mode.value}
@@ -966,12 +1354,12 @@ function buildFlow(agents: AgentDto[], results: DiscoveryResultDto[], tasks: Tas
   };
   const taskPosition = (index: number, total: number, mode: ViewMode) => {
     if (index === 0) {
-      return mode === "lineage" ? { x: 520, y: 120 } : { x: 520, y: 300 };
+      return mode === "settlement" ? { x: 520, y: 300 } : { x: 520, y: 140 };
     }
     const spread = Math.min(780, Math.max(280, total * 230));
     return {
       x: 520 - spread / 2 + (index - 1) * (spread / Math.max(total - 1, 1)),
-      y: mode === "lineage" ? 350 : 520,
+      y: mode === "settlement" ? 540 : 390,
     };
   };
   const addTaskLayer = (mode: ViewMode) => {
@@ -999,12 +1387,11 @@ function buildFlow(agents: AgentDto[], results: DiscoveryResultDto[], tasks: Tas
       animated: true,
     }));
   };
-  const addNetworkLayer = (mode: ViewMode) => {
+  const addNetworkLayer = () => {
     const orderedResults = [...results].sort((a, b) => b.ranking.score - a.ranking.score);
     orderedResults.forEach((result, index) => {
-      const isAll = mode === "all";
-      const x = isAll ? 120 + (index % 2) * 260 : 180 + (index % 2) * 340;
-      const y = isAll ? 120 + Math.floor(index / 2) * 150 : 120 + Math.floor(index / 2) * 190;
+      const x = 80 + (index % 2) * 360;
+      const y = 90 + Math.floor(index / 2) * 190;
       addNode({
         id: `agent:${result.agent.agent_id}`,
         type: "default",
@@ -1076,38 +1463,84 @@ function buildFlow(agents: AgentDto[], results: DiscoveryResultDto[], tasks: Tas
     });
   };
 
-  if (viewMode === "network") {
-    addNetworkLayer("network");
-  } else if (viewMode === "market") {
+  if (viewMode === "marketplace") {
     addMarketLayer();
-  } else if (viewMode === "lifecycle") {
+  } else if (viewMode === "settlement") {
     addLifecycleLayer();
+    addTaskLayer(viewMode);
+  } else if (viewMode === "reputation") {
+    addNetworkLayer();
+    childTasks.forEach((task) => {
+      const agent = agentById.get(task.worker_agent_id);
+      const result = resultByAgentId.get(task.worker_agent_id);
+      if (agent) {
+        addNode({
+          id: `task:${task.task_id}`,
+          type: "default",
+          position: { x: 820, y: 110 + childTasks.indexOf(task) * 170 },
+          data: {
+            tone: STATUS_META[task.status].tone,
+            label: <TaskNode task={task} selected={selectedTaskId === task.task_id} />,
+          },
+        });
+        addEdge({
+          id: `reputation:${task.task_id}:${agent.agent_id}`,
+          source: `task:${task.task_id}`,
+          target: `agent:${agent.agent_id}`,
+          animated: false,
+          style: { stroke: toneColor("success") },
+        });
+      }
+      if (result) {
+        addEdge({
+          id: `skill-reputation:${result.skill.skill_id}:${task.task_id}`,
+          source: `skill:${result.skill.skill_id}`,
+          target: `task:${task.task_id}`,
+          animated: true,
+        });
+      }
+    });
   } else {
     addTaskLayer(viewMode);
-    if (viewMode === "all") {
-      addNetworkLayer("all");
-      addLifecycleLayer(760);
-      childTasks.forEach((task) => {
-        const agent = agentById.get(task.worker_agent_id);
-        const result = resultByAgentId.get(task.worker_agent_id);
-        if (agent) {
-          addEdge({
-            id: `task-worker:${task.task_id}:${agent.agent_id}`,
-            source: `agent:${agent.agent_id}`,
-            target: `task:${task.task_id}`,
-            animated: true,
-          });
-        }
-        if (result) {
-          addEdge({
-            id: `skill-task:${result.skill.skill_id}:${task.task_id}`,
-            source: `skill:${result.skill.skill_id}`,
-            target: `task:${task.task_id}`,
-            animated: false,
-          });
-        }
-      });
-    }
+    childTasks.forEach((task) => {
+      const agent = agentById.get(task.worker_agent_id);
+      const result = resultByAgentId.get(task.worker_agent_id);
+      if (agent) {
+        addNode({
+          id: `agent:${agent.agent_id}`,
+          type: "default",
+          position: { x: 80 + childTasks.indexOf(task) * 310, y: 620 },
+          data: {
+            tone: STATUS_META[agent.status].tone,
+            label: <AgentNode agent={agent} />,
+          },
+        });
+        addEdge({
+          id: `delegation-worker:${task.task_id}:${agent.agent_id}`,
+          source: `task:${task.task_id}`,
+          target: `agent:${agent.agent_id}`,
+          animated: true,
+          style: { stroke: toneColor("info") },
+        });
+      }
+      if (result) {
+        addNode({
+          id: `skill:${result.skill.skill_id}`,
+          type: "default",
+          position: { x: 120 + childTasks.indexOf(task) * 310, y: 800 },
+          data: {
+            tone: "info",
+            label: <SkillNode result={result} />,
+          },
+        });
+        addEdge({
+          id: `capability:${result.skill.skill_id}:${task.task_id}`,
+          source: `agent:${result.agent.agent_id}`,
+          target: `skill:${result.skill.skill_id}`,
+          animated: false,
+        });
+      }
+    });
   }
 
   return { nodes, edges };
@@ -1400,6 +1833,23 @@ function clamp(value: number, min: number, max: number) {
 
 function formatLamports(value: string) {
   return `${Number(value).toLocaleString()} lamports`;
+}
+
+function nextProtocolState(status: TaskStatus) {
+  const index = LIFECYCLE.indexOf(status);
+  if (index >= 0 && index < LIFECYCLE.length - 1) {
+    return STATUS_META[LIFECYCLE[index + 1]].label;
+  }
+  if (status === "completed") {
+    return "settled and reputation updated";
+  }
+  if (status === "failed" || status === "expired" || status === "cancelled") {
+    return "refund or closeout review";
+  }
+  if (status === "disputed") {
+    return "dispute resolution";
+  }
+  return "protocol review";
 }
 
 function compactLamports(value: string) {

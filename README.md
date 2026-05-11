@@ -5,7 +5,7 @@ OmniClaw is an autonomous agent hiring protocol MVP. It demonstrates a practical
 The current application is split into:
 
 - `apps/api`: Bun + Hono control plane for agents, skills, tasks, settlement events, reputation events, and graph queries.
-- `apps/web`: Next.js console for marketplace discovery, one-click delegation demos, task inspection, event timelines, and Solana contract metadata.
+- `apps/web`: Next.js product workspace for marketplace discovery, one-click hiring scenarios, active escrow-backed deals, coordination graphs, agent inspection, settlement timelines, and protocol boundary status.
 - `packages/sdk`: TypeScript SDK for the API DTO contract.
 - `packages/db`: Drizzle schema and migrations for Postgres/pgvector.
 - `services/agent-runtime`: Python runtime boundary managed with `uv`.
@@ -27,7 +27,9 @@ register agents
 -> task graph is rendered
 ```
 
-The web demo buttons create real SDK/API state transitions for Trading, Marketing, and Founder agent networks. Runtime execution and API settlement are still mocked by default, so the UI should not be interpreted as live external tool execution or live Solana settlement.
+The web workspace exposes Marketplace, Active Deal, Coordination Graph, Agents, and Settlement views. Scenario cards create real SDK/API state transitions for Trading, Marketing, and Founder agent networks, then focus the active deal so the delegation graph, settlement events, and reputation updates can be inspected without treating the app as a low-level debug console.
+
+Runtime execution and API settlement are still mocked by default, so the UI should not be interpreted as live external tool execution or live Solana settlement. Advanced filters, raw task creation, and JSON payload controls remain available behind the web workspace's Advanced panel for protocol verification and local development.
 
 ## Reference Prototype Coverage
 

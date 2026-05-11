@@ -24,9 +24,12 @@ Use a restrained dark web3 palette with semantic accents:
 
 ## Layout
 
-- The graph canvas is the primary surface.
-- Demo controls should sit close to the graph, not as a marketing hero.
-- Inspector panels should expose task DTOs, event streams, and task indexes without hiding protocol details.
+- The first screen is an interactive product workspace, not a landing page or developer console.
+- Use top-level workspace views for Marketplace, Active Deal, Coordination Graph, Agents, and Settlement so users can evaluate the full autonomous labor loop.
+- Scenario cards should make the hiring path explicit: user job, coordinator, specialist workers, escrow amount, and expected outcome.
+- The graph canvas is the primary surface inside the Coordination Graph view.
+- Advanced filters, manual task creation, arbitrary IDs, and JSON payload controls should sit behind a compact Advanced panel.
+- Inspector panels should expose task DTOs, event streams, settlement status, and task indexes without letting raw DTO language dominate the first viewport.
 - Use cards only for repeated graph nodes, inspector panels, and bounded tool areas.
 - Do not nest cards inside cards.
 - Preserve dense operational scanning, but use spacing and contrast to keep the web3 network feel.
@@ -35,10 +38,12 @@ Use a restrained dark web3 palette with semantic accents:
 
 - Use lucide icons for actions and status labels.
 - Use segmented controls for graph modes.
-- Use buttons for explicit demo actions such as `Trading Network`, `Marketing Swarm`, and `Founder Stack`.
+- Use product-oriented graph modes: `Coordination`, `Marketplace`, `Settlement`, and `Reputation`.
+- Use scenario cards or buttons for explicit demo actions such as `Trading Network`, `Marketing Swarm`, and `Founder Stack`.
 - Graph nodes should show real IDs, status, payment, payout, and deadline metadata.
 - Status must be communicated with both color and text.
 - Raw DTOs should remain available for protocol verification.
+- Boundary status for SDK/API, runtime, Solana settlement, and wallet auth should remain visible but secondary.
 
 ## Motion
 
