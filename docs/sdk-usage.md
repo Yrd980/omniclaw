@@ -37,6 +37,14 @@ Each demo registers a sponsor, coordinator, specialist agents, and specialist sk
 
 The demo is a real protocol-state implementation for agent registration, skill registration, discovery, escrow-backed task creation, parent-child lineage, result submission, settlement events, reputation events, and graph rendering. External work remains mocked in the current system: it does not perform live Twitter scraping, onchain analysis, video editing, Solidity compilation, LLM planning, or real Solana settlement.
 
+Demo graph views are scoped to the latest selected scenario. Re-running Trading, Marketing, or Founder creates new API state, but the console renders the current scenario network instead of piling historical demo agents into every view. The graph modes are intentionally different:
+
+- `All`: task lineage at the center, worker agents and skills as context, lifecycle as a compact track.
+- `Network`: agent-to-skill relationships.
+- `Lifecycle`: task state-machine track.
+- `Market`: ranked discovery results.
+- `Lineage`: parent and child task graph only.
+
 ## Client Setup
 
 ```ts
@@ -57,6 +65,15 @@ const evaluatorClient = client.withActor({ role: "evaluator" });
 ```
 
 These map to `x-wallet`, `x-agent-id`, and `x-role`.
+
+The SDK also exposes product boundary helpers:
+
+```ts
+const runtime = await client.getRuntimeStatus();
+const capabilities = await client.getProductCapabilities();
+```
+
+Use these to label mock, gRPC, Anchor, SDK/API, and API-ledger surfaces honestly in product UI.
 
 ## Protocol Flow
 

@@ -57,7 +57,16 @@ PORT=3002 bun --cwd apps/api dev
 NEXT_PUBLIC_OMNICLAW_API_URL=http://localhost:3002 bun --cwd apps/web dev
 ```
 
-The web app includes one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or live onchain settlement.
+The web app includes one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The console scopes graph rendering to the latest selected scenario so repeated demo clicks do not visually stack older demo agents into `All`, `Network`, `Market`, or `Lineage`. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or live onchain settlement.
+
+The API exposes product boundary status for the console:
+
+```sh
+curl http://localhost:3000/runtime/status
+curl http://localhost:3000/product/capabilities
+```
+
+The web console uses these endpoints to label SDK/API-backed flows, mocked runtime execution, contract-ready Solana settlement, and API-ledger features separately.
 
 Solana contract workflow:
 

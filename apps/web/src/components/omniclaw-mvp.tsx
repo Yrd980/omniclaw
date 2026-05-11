@@ -26,6 +26,9 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createOmniClawClient,
   OmniClawApiError,
@@ -36,7 +39,9 @@ import {
   type DiscoverAgentsFilters,
   type DiscoveryResultDto,
   type ListTasksFilters,
+  type ProductCapabilitiesDto,
   type ReputationEventDto,
+  type RuntimeStatusDto,
   type SettlementEventDto,
   type SolanaContractInfoDto,
   type TaskDetailDto,
@@ -91,6 +96,14 @@ type PrototypeActivation = {
   swap: TokenTransferDto;
   profile: ProfileDto;
 };
+type DraftTask = {
+  hirerAgentId: string;
+  workerAgentId: string;
+  skillId: string;
+  paymentLamports: string;
+  payloadJson: string;
+  deadlineMinutes: string;
+};
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
 const VIEW_MODES: Array<{ value: ViewMode; label: string }> = [
@@ -117,6 +130,7 @@ const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: Statu
 };
 
 const LIFECYCLE: TaskStatus[] = ["created", "escrow_locked", "accepted", "in_progress", "submitted", "completed"];
+const TASK_FILTER_STATUSES: TaskStatus[] = [...LIFECYCLE, "failed", "expired", "disputed", "cancelled"];
 const DEMO_SCENARIOS: DemoScenario[] = [
   {
     slug: "trading",
@@ -165,8 +179,18 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [detail, setDetail] = useState<TaskDetailDto | null>(null);
   const [graph, setGraph] = useState<TaskGraphDto | null>(null);
   const [contractInfo, setContractInfo] = useState<SolanaContractInfoDto | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusDto | null>(null);
+  const [productCapabilities, setProductCapabilities] = useState<ProductCapabilitiesDto | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [draftTask, setDraftTask] = useState<DraftTask>({
+    hirerAgentId: "",
+    workerAgentId: "",
+    skillId: "",
+    paymentLamports: "50000000",
+    payloadJson: "{\n  \"topic\": \"Evaluate OmniClaw marketplace readiness\"\n}",
+    deadlineMinutes: "60",
+  });
   const [busy, setBusy] = useState<string | null>(null);
   const [issue, setIssue] = useState<ApiIssue | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -269,15 +293,11 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
     if (result) {
       setFilters({ capability: "", status: "active" });
       setTaskFilters({ parent_task_id: result.parent.task_id });
-      const [taskList, discovery] = await Promise.all([
-        run("tasks", () => client.listTasks({ parent_task_id: result.parent.task_id }, activeActor)),
-        run("discovery", () => client.discoverAgents({ status: "active" }, activeActor)),
-      ]);
+      const taskList = await run("tasks", () => client.listTasks({ parent_task_id: result.parent.task_id }, activeActor));
+      const scenarioResults = demoDiscoveryResults(result.network);
+      setResults(scenarioResults);
       if (taskList) {
         setTasks([result.parent, ...taskList.tasks]);
-      }
-      if (discovery) {
-        setResults(discovery.results);
       }
       await loadTask(result.parent.task_id);
       setViewMode("lineage");
@@ -323,16 +343,24 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   }, [client, run]);
 
   const refreshData = useCallback(async () => {
-    const [discovery, taskList, solanaInfo] = await Promise.all([
+    const [discovery, taskList, solanaInfo, runtimeInfo, capabilities] = await Promise.all([
       run("discovery", () => client.discoverAgents(cleanFilters(filters), activeActor)),
       run("tasks", () => client.listTasks(cleanTaskFilters(taskFilters), activeActor)),
       run("solana", () => client.getSolanaContractInfo(activeActor)),
+      run("runtime", () => client.getRuntimeStatus(activeActor)),
+      run("capabilities", () => client.getProductCapabilities(activeActor)),
     ]);
     if (discovery) {
       setResults(discovery.results);
     }
     if (solanaInfo) {
       setContractInfo(solanaInfo);
+    }
+    if (runtimeInfo) {
+      setRuntimeStatus(runtimeInfo);
+    }
+    if (capabilities) {
+      setProductCapabilities(capabilities);
     }
     if (taskList) {
       setTasks(taskList.tasks);
@@ -347,6 +375,32 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
     }
   }, [activeActor, client, filters, loadTask, results.length, run, selectedTaskId, taskFilters]);
 
+  const createDraftTask = useCallback(async () => {
+    const result = await run("create-task", async () => {
+      const payload = parseDraftJson(draftTask.payloadJson);
+      const discoveredWorkerId = results.find((item) => item.skill.skill_id === draftTask.skillId)?.agent.agent_id;
+      const workerAgentId = draftTask.workerAgentId || discoveredWorkerId;
+      if (!workerAgentId) {
+        throw new Error("worker_agent_id is required");
+      }
+      return await client.createTask({
+        hirer_agent_id: draftTask.hirerAgentId,
+        worker_agent_id: workerAgentId,
+        skill_id: draftTask.skillId,
+        task_payload: payload,
+        payment_lamports: draftTask.paymentLamports,
+        deadline: futureIso(Number(draftTask.deadlineMinutes) || 60),
+      }, { agentId: draftTask.hirerAgentId });
+    });
+    if (result) {
+      setSelectedTaskId(result.task_id);
+      setTaskFilters({});
+      await refreshData();
+      await loadTask(result.task_id);
+      setNotice(`Task ${result.task_id} created and escrow locked through SDK/API`);
+    }
+  }, [client, draftTask, loadTask, refreshData, results, run]);
+
   useEffect(() => {
     void refreshData();
   }, []);
@@ -356,6 +410,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const market = useMemo(() => buildMarketSignals(results, tasks), [results, tasks]);
   const activeTask = detail?.task ?? tasks.find((task) => task.task_id === selectedTaskId) ?? null;
   const flow = useMemo(() => buildFlow(agents, results, tasks, graph, selectedTaskId, viewMode), [agents, graph, results, selectedTaskId, tasks, viewMode]);
+  const selectedResult = useMemo(() => results.find((result) => result.skill.skill_id === draftTask.skillId), [draftTask.skillId, results]);
 
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
@@ -396,12 +451,26 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
               </div>
             </div>
           </div>
+          <ControlDeck
+            filters={filters}
+            taskFilters={taskFilters}
+            draftTask={draftTask}
+            results={results}
+            selectedResult={selectedResult}
+            busy={busy}
+            onFiltersChange={setFilters}
+            onTaskFiltersChange={setTaskFilters}
+            onDraftTaskChange={setDraftTask}
+            onRefresh={() => void refreshData()}
+            onCreateTask={() => void createDraftTask()}
+          />
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-3">
             <SegmentedControl value={viewMode} onChange={setViewMode} />
             <div className="flex flex-wrap items-center gap-2">
               <Signal icon={<Network size={15} />} label="agents" value={String(agents.length)} />
               <Signal icon={<GitBranch size={15} />} label="tasks" value={String(tasks.length)} />
               <Signal icon={<ShieldCheck size={15} />} label="settlement" value={contractInfo?.settlement_mode ?? "mock"} />
+              <Signal icon={<Activity size={15} />} label="runtime" value={runtimeStatus?.adapter_mode ?? "mock"} />
             </div>
           </div>
 
@@ -411,9 +480,11 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             <div className="relative h-full">
               {flow.nodes.length > 0 ? (
                 <ReactFlow
+                  key={`${viewMode}:${graph?.rootTaskId ?? "market"}:${flow.nodes.length}:${flow.edges.length}`}
                   nodes={flow.nodes}
                   edges={flow.edges}
                   fitView
+                  fitViewOptions={{ padding: 0.22 }}
                   onNodeClick={(_, node) => {
                     if (node.type === "task" || String(node.id).startsWith("task:")) {
                       void loadTask(String(node.id).replace(/^task:/, ""));
@@ -433,7 +504,8 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
 
         <aside className="grid gap-4">
           <ProtocolActions activation={prototypeActivation} busy={busy === "prototype"} onActivate={runPrototypeActivation} />
-          <ConsoleSummary market={market} contractInfo={contractInfo} />
+          <ProductReadiness capabilities={productCapabilities} />
+          <ConsoleSummary market={market} contractInfo={contractInfo} runtimeStatus={runtimeStatus} capabilities={productCapabilities} />
           <Inspector task={activeTask} detail={detail} events={events} onSelectTask={loadTask} tasks={tasks} />
         </aside>
       </div>
@@ -455,6 +527,141 @@ function SegmentedControl({ value, onChange }: { value: ViewMode; onChange: (val
         </button>
       ))}
     </div>
+  );
+}
+
+function ControlDeck({
+  filters,
+  taskFilters,
+  draftTask,
+  results,
+  selectedResult,
+  busy,
+  onFiltersChange,
+  onTaskFiltersChange,
+  onDraftTaskChange,
+  onRefresh,
+  onCreateTask,
+}: {
+  filters: DiscoverAgentsFilters;
+  taskFilters: ListTasksFilters;
+  draftTask: DraftTask;
+  results: DiscoveryResultDto[];
+  selectedResult: DiscoveryResultDto | undefined;
+  busy: string | null;
+  onFiltersChange: (filters: DiscoverAgentsFilters) => void;
+  onTaskFiltersChange: (filters: ListTasksFilters) => void;
+  onDraftTaskChange: (draft: DraftTask) => void;
+  onRefresh: () => void;
+  onCreateTask: () => void;
+}) {
+  return (
+    <div className="grid gap-3 border-b border-[var(--border)] bg-[var(--canvas)] px-4 py-3 lg:grid-cols-[1fr_1fr_1.2fr]">
+      <section className="rounded-md border border-[var(--border)] bg-[var(--panel)] p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Marketplace filters</h2>
+          <Search size={15} className="text-[var(--muted)]" />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="capability">
+            <Input value={String(filters.capability ?? "")} onChange={(event) => onFiltersChange({ ...filters, capability: event.target.value })} placeholder="market_research" />
+          </Field>
+          <Field label="status">
+            <Select value={filters.status ?? ""} onChange={(event) => onFiltersChange({ ...filters, status: event.target.value as AgentStatus || undefined })}>
+              <option value="">any</option>
+              <option value="active">active</option>
+              <option value="paused">paused</option>
+              <option value="suspended">suspended</option>
+            </Select>
+          </Field>
+          <Field label="reputation_gt">
+            <Input value={String(filters.reputation_gt ?? "")} onChange={(event) => onFiltersChange({ ...filters, reputation_gt: event.target.value })} placeholder="80" />
+          </Field>
+          <Field label="max_price_lamports">
+            <Input value={filters.max_price_lamports ?? ""} onChange={(event) => onFiltersChange({ ...filters, max_price_lamports: event.target.value })} placeholder="100000000" />
+          </Field>
+        </div>
+        <Button className="mt-3 w-full" variant="secondary" onClick={onRefresh} busy={busy === "discovery"} icon={<RefreshCw size={16} />}>Apply filters</Button>
+      </section>
+
+      <section className="rounded-md border border-[var(--border)] bg-[var(--panel)] p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Task filters</h2>
+          <GitBranch size={15} className="text-[var(--muted)]" />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="worker_agent_id">
+            <Input value={taskFilters.worker_agent_id ?? ""} onChange={(event) => onTaskFiltersChange({ ...taskFilters, worker_agent_id: event.target.value })} placeholder="agent_xxx" />
+          </Field>
+          <Field label="status">
+            <Select value={taskFilters.status ?? ""} onChange={(event) => onTaskFiltersChange({ ...taskFilters, status: event.target.value as TaskStatus || undefined })}>
+              <option value="">any</option>
+              {TASK_FILTER_STATUSES.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="parent_task_id">
+            <Input value={taskFilters.parent_task_id ?? ""} onChange={(event) => onTaskFiltersChange({ ...taskFilters, parent_task_id: event.target.value || undefined })} placeholder="task_xxx or null" />
+          </Field>
+          <Field label="deadline_from">
+            <Input value={taskFilters.deadline_from ?? ""} onChange={(event) => onTaskFiltersChange({ ...taskFilters, deadline_from: event.target.value })} placeholder="ISO timestamp" />
+          </Field>
+        </div>
+        <Button className="mt-3 w-full" variant="secondary" onClick={onRefresh} busy={busy === "tasks"} icon={<RefreshCw size={16} />}>Apply task filters</Button>
+      </section>
+
+      <section className="rounded-md border border-[var(--border)] bg-[var(--panel)] p-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Create task</h2>
+          <Rocket size={15} className="text-[var(--accent)]" />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="hirer_agent_id">
+            <Input value={draftTask.hirerAgentId} onChange={(event) => onDraftTaskChange({ ...draftTask, hirerAgentId: event.target.value })} placeholder="agent_hirer" />
+          </Field>
+          <Field label="create_worker_agent_id">
+            <Input value={draftTask.workerAgentId} onChange={(event) => onDraftTaskChange({ ...draftTask, workerAgentId: event.target.value })} placeholder={selectedResult?.agent.agent_id ?? "agent_worker"} />
+          </Field>
+          <Field label="worker skill">
+            <Select
+              value={draftTask.skillId}
+              onChange={(event) => {
+                const result = results.find((item) => item.skill.skill_id === event.target.value);
+                onDraftTaskChange({
+                  ...draftTask,
+                  skillId: event.target.value,
+                  workerAgentId: result?.agent.agent_id ?? "",
+                  paymentLamports: result?.skill.base_price_lamports ?? draftTask.paymentLamports,
+                });
+              }}
+            >
+              <option value="">select discovery result</option>
+              {results.map((result) => <option key={result.skill.skill_id} value={result.skill.skill_id}>{result.agent.name} / {result.skill.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="payment_lamports">
+            <Input value={draftTask.paymentLamports} onChange={(event) => onDraftTaskChange({ ...draftTask, paymentLamports: event.target.value })} />
+          </Field>
+          <Field label="deadline_minutes">
+            <Input value={draftTask.deadlineMinutes} onChange={(event) => onDraftTaskChange({ ...draftTask, deadlineMinutes: event.target.value })} />
+          </Field>
+        </div>
+        <Field label={`task_payload${selectedResult ? ` for ${selectedResult.skill.name}` : ""}`}>
+          <Textarea value={draftTask.payloadJson} onChange={(event) => onDraftTaskChange({ ...draftTask, payloadJson: event.target.value })} />
+        </Field>
+        <Button className="mt-3 w-full" onClick={onCreateTask} busy={busy === "create-task"} icon={<ShieldCheck size={16} />}>Create escrow task</Button>
+      </section>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="grid gap-1 text-xs font-medium text-[var(--muted)]">
+      {label}
+      {children}
+    </label>
   );
 }
 
@@ -577,7 +784,47 @@ function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDt
   );
 }
 
-function ConsoleSummary({ market, contractInfo }: { market: ReturnType<typeof buildMarketSignals>; contractInfo: SolanaContractInfoDto | null }) {
+function ProductReadiness({ capabilities }: { capabilities: ProductCapabilitiesDto | null }) {
+  const items = capabilities?.capabilities ?? [];
+  return (
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">product readiness</div>
+          <h2 className="mt-1 text-base font-semibold">Capability map</h2>
+        </div>
+        <ShieldCheck size={17} className="text-[var(--accent)]" />
+      </div>
+      <div className="grid gap-2 p-4">
+        {items.length > 0 ? items.map((item) => (
+          <div key={item.id} className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold">{item.label}</span>
+              <CapabilityBadge status={item.status} />
+            </div>
+            <p className="text-xs leading-5 text-[var(--muted)]">{item.description}</p>
+          </div>
+        )) : (
+          <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--background)] p-3 text-sm text-[var(--muted)]">
+            Capability status loads from the API product boundary.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ConsoleSummary({
+  market,
+  contractInfo,
+  runtimeStatus,
+  capabilities,
+}: {
+  market: ReturnType<typeof buildMarketSignals>;
+  contractInfo: SolanaContractInfoDto | null;
+  runtimeStatus: RuntimeStatusDto | null;
+  capabilities: ProductCapabilitiesDto | null;
+}) {
   return (
     <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
@@ -589,10 +836,28 @@ function ConsoleSummary({ market, contractInfo }: { market: ReturnType<typeof bu
       </div>
       <div className="grid gap-3 p-4">
         <Metric label="settlement_mode" value={contractInfo?.settlement_mode ?? "loading"} />
+        <Metric label="runtime_adapter" value={runtimeStatus?.adapter_mode ?? "loading"} />
+        <Metric label="runtime_provider" value={runtimeStatus?.provider ?? "loading"} />
+        <Metric label="wallet_auth" value={capabilities?.boundaries.wallet_auth ?? "loading"} />
         <Metric label="total_payment_lamports" value={formatLamports(market.totalPayment)} />
         <Metric label="avg_reputation" value={market.avgReputation.toFixed(0)} />
       </div>
     </section>
+  );
+}
+
+function CapabilityBadge({ status }: { status: ProductCapabilitiesDto["capabilities"][number]["status"] }) {
+  const meta: Record<ProductCapabilitiesDto["capabilities"][number]["status"], { label: string; tone: StatusTone }> = {
+    live_sdk_api: { label: "live SDK/API", tone: "success" },
+    contract_ready: { label: "contract-ready", tone: "info" },
+    api_ledger: { label: "API ledger", tone: "warning" },
+    mocked_boundary: { label: "mocked", tone: "neutral" },
+  };
+  const item = meta[status];
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-md border px-2 py-1 text-xs font-medium" style={{ borderColor: toneColor(item.tone), color: toneColor(item.tone) }}>
+      {item.label}
+    </span>
   );
 }
 
@@ -672,58 +937,136 @@ function EmptyVisualization() {
 function buildFlow(agents: AgentDto[], results: DiscoveryResultDto[], tasks: TaskDto[], graph: TaskGraphDto | null, selectedTaskId: string | null, viewMode: ViewMode): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
-  const showMarket = viewMode === "all" || viewMode === "market";
-  const showNetwork = viewMode === "all" || viewMode === "network";
-  const showLineage = viewMode === "all" || viewMode === "lineage";
-  const showLifecycle = viewMode === "all" || viewMode === "lifecycle";
-
-  if (showNetwork || showMarket) {
-    agents.forEach((agent, index) => {
-      const angle = (index / Math.max(agents.length, 1)) * Math.PI * 2;
-      const radius = showMarket ? 250 + clamp(agent.reputation_score, 0, 100) : 260;
-      nodes.push({
-        id: `agent:${agent.agent_id}`,
+  const nodeIds = new Set<string>();
+  const edgeIds = new Set<string>();
+  const graphTasks = graph?.nodes.map((node) => ({
+    task_id: node.taskId,
+    parent_task_id: node.parentTaskId,
+    worker_agent_id: node.workerAgentId,
+    payment_lamports: node.paymentLamports,
+    worker_payout_lamports: node.workerPayoutLamports,
+    status: node.status,
+    deadline: node.deadline,
+  })) ?? tasks;
+  const rootTaskId = graph?.rootTaskId ?? graphTasks.find((task) => task.parent_task_id === null)?.task_id ?? graphTasks[0]?.task_id ?? null;
+  const childTasks = graphTasks.filter((task) => task.task_id !== rootTaskId);
+  const agentById = new Map(agents.map((agent) => [agent.agent_id, agent]));
+  const resultByAgentId = new Map(results.map((result) => [result.agent.agent_id, result]));
+  const addNode = (node: Node) => {
+    if (!nodeIds.has(node.id)) {
+      nodeIds.add(node.id);
+      nodes.push(node);
+    }
+  };
+  const addEdge = (edge: Edge) => {
+    if (!edgeIds.has(edge.id) && nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+      edgeIds.add(edge.id);
+      edges.push(edge);
+    }
+  };
+  const taskPosition = (index: number, total: number, mode: ViewMode) => {
+    if (index === 0) {
+      return mode === "lineage" ? { x: 520, y: 120 } : { x: 520, y: 300 };
+    }
+    const spread = Math.min(780, Math.max(280, total * 230));
+    return {
+      x: 520 - spread / 2 + (index - 1) * (spread / Math.max(total - 1, 1)),
+      y: mode === "lineage" ? 350 : 520,
+    };
+  };
+  const addTaskLayer = (mode: ViewMode) => {
+    const ordered = [...graphTasks].sort((a, b) => {
+      if (a.task_id === rootTaskId) return -1;
+      if (b.task_id === rootTaskId) return 1;
+      return a.task_id.localeCompare(b.task_id);
+    });
+    ordered.forEach((task, index) => {
+      addNode({
+        id: `task:${task.task_id}`,
         type: "default",
-        position: { x: 380 + Math.cos(angle) * radius, y: 260 + Math.sin(angle) * radius },
+        position: taskPosition(index, ordered.length, mode),
         data: {
-          tone: STATUS_META[agent.status].tone,
-          label: <AgentNode agent={agent} />,
+          tone: STATUS_META[task.status].tone,
+          label: <TaskNode task={task} selected={selectedTaskId === task.task_id} />,
         },
       });
     });
-    results.forEach((result, index) => {
-      const skillId = `skill:${result.skill.skill_id}`;
-      nodes.push({
-        id: skillId,
+    const graphEdges = graph?.edges.map((edge) => ({ from: edge.from, to: edge.to })) ?? graphTasks.filter((task) => task.parent_task_id).map((task) => ({ from: task.parent_task_id as string, to: task.task_id }));
+    graphEdges.forEach((edge) => addEdge({
+      id: `task-edge:${edge.from}:${edge.to}`,
+      source: `task:${edge.from}`,
+      target: `task:${edge.to}`,
+      animated: true,
+    }));
+  };
+  const addNetworkLayer = (mode: ViewMode) => {
+    const orderedResults = [...results].sort((a, b) => b.ranking.score - a.ranking.score);
+    orderedResults.forEach((result, index) => {
+      const isAll = mode === "all";
+      const x = isAll ? 120 + (index % 2) * 260 : 180 + (index % 2) * 340;
+      const y = isAll ? 120 + Math.floor(index / 2) * 150 : 120 + Math.floor(index / 2) * 190;
+      addNode({
+        id: `agent:${result.agent.agent_id}`,
         type: "default",
-        position: { x: 620 + (index % 3) * 220, y: 120 + Math.floor(index / 3) * 150 },
+        position: { x, y },
+        data: {
+          tone: STATUS_META[result.agent.status].tone,
+          label: <AgentNode agent={result.agent} />,
+        },
+      });
+      addNode({
+        id: `skill:${result.skill.skill_id}`,
+        type: "default",
+        position: { x: x + 320, y: y + 18 },
         data: {
           tone: "info",
           label: <SkillNode result={result} />,
         },
       });
-      edges.push({
+      addEdge({
         id: `agent-skill:${result.agent.agent_id}:${result.skill.skill_id}`,
         source: `agent:${result.agent.agent_id}`,
-        target: skillId,
+        target: `skill:${result.skill.skill_id}`,
         animated: true,
       });
     });
-  }
-
-  if (showLifecycle) {
+  };
+  const addMarketLayer = () => {
+    [...results].sort((a, b) => b.ranking.score - a.ranking.score).forEach((result, index) => {
+      const laneY = 100 + index * 145;
+      addNode({
+        id: `agent:${result.agent.agent_id}`,
+        type: "default",
+        position: { x: 120, y: laneY },
+        data: { tone: STATUS_META[result.agent.status].tone, label: <AgentNode agent={result.agent} /> },
+      });
+      addNode({
+        id: `skill:${result.skill.skill_id}`,
+        type: "default",
+        position: { x: 500 + result.ranking.score * 220, y: laneY + 10 },
+        data: { tone: "info", label: <SkillNode result={result} /> },
+      });
+      addEdge({
+        id: `market:${result.agent.agent_id}:${result.skill.skill_id}`,
+        source: `agent:${result.agent.agent_id}`,
+        target: `skill:${result.skill.skill_id}`,
+        animated: index < 3,
+      });
+    });
+  };
+  const addLifecycleLayer = (y = 120) => {
     LIFECYCLE.forEach((status, index) => {
-      nodes.push({
+      addNode({
         id: `state:${status}`,
         type: "default",
-        position: { x: 80 + index * 210, y: 620 },
+        position: { x: 80 + index * 190, y },
         data: {
           tone: STATUS_META[status].tone,
           label: <StateNode status={status} />,
         },
       });
       if (index > 0) {
-        edges.push({
+        addEdge({
           id: `state-edge:${LIFECYCLE[index - 1]}:${status}`,
           source: `state:${LIFECYCLE[index - 1]}`,
           target: `state:${status}`,
@@ -731,39 +1074,40 @@ function buildFlow(agents: AgentDto[], results: DiscoveryResultDto[], tasks: Tas
         });
       }
     });
-  }
+  };
 
-  if (showLineage) {
-    const graphTasks = graph?.nodes.map((node) => ({
-      task_id: node.taskId,
-      parent_task_id: node.parentTaskId,
-      worker_agent_id: node.workerAgentId,
-      payment_lamports: node.paymentLamports,
-      worker_payout_lamports: node.workerPayoutLamports,
-      status: node.status,
-      deadline: node.deadline,
-    })) ?? tasks;
-    graphTasks.forEach((task, index) => {
-      const id = `task:${task.task_id}`;
-      nodes.push({
-        id,
-        type: "default",
-        position: { x: 120 + (index % 4) * 280, y: 880 + Math.floor(index / 4) * 180 },
-        data: {
-          tone: STATUS_META[task.status].tone,
-          label: <TaskNode task={task} selected={selectedTaskId === task.task_id} />,
-        },
+  if (viewMode === "network") {
+    addNetworkLayer("network");
+  } else if (viewMode === "market") {
+    addMarketLayer();
+  } else if (viewMode === "lifecycle") {
+    addLifecycleLayer();
+  } else {
+    addTaskLayer(viewMode);
+    if (viewMode === "all") {
+      addNetworkLayer("all");
+      addLifecycleLayer(760);
+      childTasks.forEach((task) => {
+        const agent = agentById.get(task.worker_agent_id);
+        const result = resultByAgentId.get(task.worker_agent_id);
+        if (agent) {
+          addEdge({
+            id: `task-worker:${task.task_id}:${agent.agent_id}`,
+            source: `agent:${agent.agent_id}`,
+            target: `task:${task.task_id}`,
+            animated: true,
+          });
+        }
+        if (result) {
+          addEdge({
+            id: `skill-task:${result.skill.skill_id}:${task.task_id}`,
+            source: `skill:${result.skill.skill_id}`,
+            target: `task:${task.task_id}`,
+            animated: false,
+          });
+        }
       });
-    });
-    const graphEdges = graph?.edges.map((edge) => ({ from: edge.from, to: edge.to })) ?? tasks.filter((task) => task.parent_task_id).map((task) => ({ from: task.parent_task_id as string, to: task.task_id }));
-    graphEdges.forEach((edge) => {
-      edges.push({
-        id: `task-edge:${edge.from}:${edge.to}`,
-        source: `task:${edge.from}`,
-        target: `task:${edge.to}`,
-        animated: true,
-      });
-    });
+    }
   }
 
   return { nodes, edges };
@@ -893,6 +1237,39 @@ function cleanFilters(filters: DiscoverAgentsFilters): DiscoverAgentsFilters {
 
 function cleanTaskFilters(filters: ListTasksFilters): ListTasksFilters {
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)) as ListTasksFilters;
+}
+
+function demoDiscoveryResults(network: Awaited<ReturnType<typeof createDelegationNetwork>>): DiscoveryResultDto[] {
+  const rows: Array<{ agent: AgentDto; skill: DiscoveryResultDto["skill"]; score: number }> = [
+    { agent: network.coordinator, skill: network.coordinatorSkill, score: 1 },
+    ...Object.values(network.specialists).map((specialist, index) => ({
+      agent: specialist.agent,
+      skill: specialist.skill,
+      score: 0.96 - index * 0.03,
+    })),
+  ];
+  return rows.map(({ agent, skill, score }) => ({
+    agent,
+    skill,
+    ranking: {
+      score,
+      skillMatch: 1,
+      reputation: agent.reputation_score / 100,
+      successRate: agent.success_rate / 100,
+      quality: agent.quality_score / 100,
+      latency: Math.max(0, 1 - skill.estimated_latency_ms / 10_000),
+      price: 1,
+      stake: Number(agent.stake_amount) > 0 ? 1 : 0,
+    },
+  }));
+}
+
+function parseDraftJson(value: string) {
+  const parsed = JSON.parse(value) as unknown;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("task_payload must be a JSON object");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function createDelegationNetwork(client: ReturnType<typeof createOmniClawClient>, scenario: DemoScenario) {
