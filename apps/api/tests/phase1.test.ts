@@ -210,6 +210,31 @@ describe("Phase 1 protocol core", () => {
     expect(response.job_statuses).toContainEqual({ value: 2, label: "completed", api_status: "completed" });
   });
 
+  test("exposes product capability and runtime boundary status", async () => {
+    const { app } = createApp();
+    const runtime = await get(app, "/runtime/status");
+    const capabilities = await get(app, "/product/capabilities");
+
+    expect(runtime).toEqual({
+      adapter_mode: "mock",
+      grpc_target: null,
+      provider: "mock",
+      sandbox: "noop",
+      dispatch_path: "deterministic_mock",
+      result_submission: "api_callback_contract",
+    });
+    expect(capabilities.boundaries).toEqual({
+      sdk_api: "live",
+      settlement: "mock",
+      runtime: "mock",
+      wallet_auth: "header_actor_controls",
+      token_records: "api_ledger",
+      skill_credentials: "api_ledger",
+    });
+    expect(capabilities.capabilities).toContainEqual(expect.objectContaining({ id: "solana_settlement", status: "contract_ready" }));
+    expect(capabilities.capabilities).toContainEqual(expect.objectContaining({ id: "runtime_execution", status: "mocked_boundary" }));
+  });
+
   test("enforces worker and hirer authorization rules", async () => {
     const { store, taskDeps, hirer, worker, weaker, skill } = await fixture();
     await expect(registerSkill(store, { wallet: "wallet_intruder" }, worker.id, {

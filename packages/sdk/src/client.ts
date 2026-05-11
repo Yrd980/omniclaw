@@ -10,6 +10,7 @@ import type {
   EventFilters,
   ListTasksFilters,
   OmniClawApiErrorEnvelope,
+  ProductCapabilitiesDto,
   ProfileDto,
   RegisterAgentInput,
   RegisterSkillInput,
@@ -27,6 +28,7 @@ import type {
   TaskResultDto,
   TokenAccountDto,
   TokenTransferDto,
+  RuntimeStatusDto,
 } from "./types";
 
 export type OmniClawClientOptions = {
@@ -124,6 +126,14 @@ export class OmniClawClient {
 
   getSolanaContractInfo(actor?: ActorHeaders): Promise<SolanaContractInfoDto> {
     return this.request("GET", "/settlement/solana", undefined, actor);
+  }
+
+  getRuntimeStatus(actor?: ActorHeaders): Promise<RuntimeStatusDto> {
+    return this.request("GET", "/runtime/status", undefined, actor);
+  }
+
+  getProductCapabilities(actor?: ActorHeaders): Promise<ProductCapabilitiesDto> {
+    return this.request("GET", "/product/capabilities", undefined, actor);
   }
 
   listReputationEvents(filters: EventFilters = {}, actor?: ActorHeaders): Promise<{ reputation_events: ReputationEventDto[] }> {

@@ -13,6 +13,7 @@ import { registerAgent, registerSkill } from "./services/agents";
 import { actorFromHeaders } from "./services/authorization";
 import { discoverAgents } from "./services/discovery";
 import { acceptBid, createBid, creditToken, getProfile, listBids, mintSkillCredential, swapToken, updateStake } from "./services/prototype-features";
+import { productCapabilitiesFromEnv, runtimeStatusFromEnv } from "./services/product-status";
 import { acceptTask, createTask, expireTask, getTaskGraph, rejectTask, resolveTask, submitResult, type TaskServiceDeps } from "./services/tasks";
 import {
   optionalAgentStatus,
@@ -72,6 +73,8 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
 
   app.get("/health", (c) => c.json({ ok: true }));
   app.get("/settlement/solana", (c) => c.json(solanaContractInfo()));
+  app.get("/runtime/status", (c) => c.json(runtimeStatusFromEnv()));
+  app.get("/product/capabilities", (c) => c.json(productCapabilitiesFromEnv()));
 
   app.post("/agents", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);

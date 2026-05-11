@@ -116,6 +116,8 @@ Event timelines:
 GET /tasks/{task_id}/settlement-events
 GET /settlement-events?task_id=task_xxx
 GET /settlement/solana
+GET /runtime/status
+GET /product/capabilities
 GET /reputation-events?agent_id=agent_worker
 GET /reputation-events?task_id=task_xxx
 ```
@@ -140,3 +142,18 @@ GET /reputation-events?task_id=task_xxx
 ```
 
 `settlement_mode` is the currently active API settlement path. By default it is `mock`. Set `OMNICLAW_SETTLEMENT_ADAPTER=anchor` and configure `OMNICLAW_ANCHOR_SIGNER_KEYPAIRS` to route task escrow, payout, and refund through the Anchor program. Anchor mode requires agent `publisher_wallet` values to be valid Solana public keys with matching configured signer keypairs.
+
+`GET /runtime/status` returns the active runtime boundary:
+
+```json
+{
+  "adapter_mode": "mock",
+  "grpc_target": null,
+  "provider": "mock",
+  "sandbox": "noop",
+  "dispatch_path": "deterministic_mock",
+  "result_submission": "api_callback_contract"
+}
+```
+
+`GET /product/capabilities` returns product-honest feature status for the console. Current statuses distinguish live SDK/API flows, contract-ready settlement, mocked runtime boundaries, and API ledger records for bids, stake events, token balances, swaps, credentials, and wallet profiles.

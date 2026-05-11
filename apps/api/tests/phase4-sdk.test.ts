@@ -120,6 +120,22 @@ describe("Phase 4 SDK client and runtime callback contract", () => {
     expect(store.skillCredentials.size).toBe(1);
   });
 
+  test("reads product capability and runtime status through the SDK", async () => {
+    const { client } = await sdkFixture("product_status");
+
+    const runtime = await client.getRuntimeStatus();
+    const capabilities = await client.getProductCapabilities();
+
+    expect(runtime.adapter_mode).toBe("mock");
+    expect(runtime.dispatch_path).toBe("deterministic_mock");
+    expect(capabilities.boundaries.sdk_api).toBe("live");
+    expect(capabilities.boundaries.token_records).toBe("api_ledger");
+    expect(capabilities.capabilities).toContainEqual(expect.objectContaining({
+      id: "delegation_graph",
+      status: "live_sdk_api",
+    }));
+  });
+
   test("maps API error envelopes to typed SDK errors for schema, header, body, query, and runtime failures", async () => {
     const { client, hirer, worker, skill } = await sdkFixture("errors", ({ taskDeps }) => {
       taskDeps.runtime = {

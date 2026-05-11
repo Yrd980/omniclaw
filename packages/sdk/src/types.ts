@@ -266,6 +266,34 @@ export type SolanaContractInfoDto = {
   instructions: string[];
 };
 
+export type RuntimeStatusDto = {
+  adapter_mode: "mock" | "grpc";
+  grpc_target: string | null;
+  provider: string;
+  sandbox: string;
+  dispatch_path: "deterministic_mock" | "grpc_runtime";
+  result_submission: "api_callback_contract";
+};
+
+export type ProductCapabilityStatus = "live_sdk_api" | "contract_ready" | "api_ledger" | "mocked_boundary";
+
+export type ProductCapabilitiesDto = {
+  capabilities: Array<{
+    id: string;
+    label: string;
+    status: ProductCapabilityStatus;
+    description: string;
+  }>;
+  boundaries: {
+    sdk_api: "live";
+    settlement: "mock" | "anchor";
+    runtime: "mock" | "grpc";
+    wallet_auth: "header_actor_controls";
+    token_records: "api_ledger";
+    skill_credentials: "api_ledger";
+  };
+};
+
 export type DiscoverAgentsFilters = {
   capability?: string;
   reputation_gt?: number | string;
