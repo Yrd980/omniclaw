@@ -5,9 +5,11 @@ import {
   Activity,
   AlertTriangle,
   BadgeDollarSign,
+  CheckCircle2,
   Circle,
   CircleDot,
   Coins,
+  FileCheck2,
   GitBranch,
   Network,
   Pause,
@@ -19,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   Timer,
+  Users,
   Zap,
 } from "lucide-react";
 import type React from "react";
@@ -78,6 +81,22 @@ type DemoScenario = {
     brief: string;
   }>;
 };
+type TaskPackScenario = DemoScenario & {
+  projectContext: {
+    project_name: string;
+    token_symbol: string;
+    target_chain: string;
+    launch_stage: string;
+    competitors: string[];
+  };
+  researchQuestions: string[];
+  acceptanceCriteria: string[];
+  permissionScope: string[];
+  delegationBudgetLamports: string;
+  reviewWindowHours: number;
+  privacyLevel: "private" | "public_metadata";
+  settlementMode: "demo_mock" | "testnet" | "production";
+};
 
 const API_URL = process.env.NEXT_PUBLIC_OMNICLAW_API_URL ?? "http://localhost:3000";
 const AGENT_STATUSES: AgentStatus[] = ["active", "paused", "suspended"];
@@ -108,6 +127,42 @@ const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: Statu
 };
 
 const LIFECYCLE: TaskStatus[] = ["created", "escrow_locked", "accepted", "in_progress", "submitted", "completed"];
+const CRYPTO_LAUNCH_TASK_PACK: TaskPackScenario = {
+  slug: "crypto_launch",
+  label: "Crypto Launch / Market Intelligence",
+  coordinatorName: "Launch Intelligence Coordinator",
+  mission: "Produce an evidence-backed launch intelligence memo for a Web3 team",
+  accent: "success",
+  projectContext: {
+    project_name: "OmniClaw Research Beta",
+    token_symbol: "CLAW",
+    target_chain: "Solana",
+    launch_stage: "pre-TGE beta",
+    competitors: ["Bittensor", "Autonolas", "Masa", "Ritual"],
+  },
+  researchQuestions: [
+    "Which competitor positioning is strongest for Web3 agent work?",
+    "What onchain and market risks should the launch team address before beta?",
+    "Which KOL and community channels are credible for initial distribution?",
+  ],
+  acceptanceCriteria: [
+    "Final memo references every specialist child task",
+    "Competitor, onchain/risk, social/KOL, and report-generation artifacts include hashes and safety labels",
+    "Escrow, review window, payout, refund, and dispute rules are visible before approval",
+  ],
+  permissionScope: ["web_research", "public_onchain_review", "social_monitoring", "read_child_task_details"],
+  delegationBudgetLamports: "42000000",
+  reviewWindowHours: 24,
+  privacyLevel: "private",
+  settlementMode: "demo_mock",
+  specialists: [
+    { name: "Web Research Agent", capability: "web_research", brief: "Collect public launch, market, and competitor evidence" },
+    { name: "Onchain Risk Agent", capability: "onchain_risk_review", brief: "Review public wallet, liquidity, and concentration risk signals" },
+    { name: "Social KOL Agent", capability: "social_kol_research", brief: "Map KOL, community, and narrative channels for launch" },
+    { name: "Competitor Agent", capability: "competitor_analysis", brief: "Compare agent-network, data, and research-workbench positioning" },
+    { name: "Report Agent", capability: "report_generation", brief: "Aggregate child evidence into a concise investor-ready memo" },
+  ],
+};
 const DEMO_SCENARIOS: DemoScenario[] = [
   {
     slug: "trading",
@@ -202,6 +257,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
         task_payload: {
           mission: scenario.mission,
           runtime_submit_result: false,
+          ...taskPackPayload(scenario),
         },
         payment_lamports: "90000000",
         deadline: futureIso(90),
@@ -228,6 +284,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             capability: specialist.capability,
             brief: specialist.brief,
             parent_mission: scenario.mission,
+            ...childTaskPayload(scenario, specialist),
           },
           payment_lamports: match.skill.base_price_lamports,
           deadline: parent.deadline,
@@ -238,8 +295,9 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             ok: true,
             worker_agent_id: match.agent.agent_id,
             delivered_for: specialist.capability,
+            evidence_summary: `${specialist.brief} for ${scenario.mission}`,
           },
-          artifacts: [{ kind: "capability_output", capability: specialist.capability }],
+          artifacts: [artifactReference(scenario.slug, specialist.capability, child.task_id)],
         }, { agentId: match.agent.agent_id });
         await client.resolveTask(child.task_id, { resolution: "completed", quality_score: 92, review_score: 5 }, { agentId: network.coordinator.agent_id });
         childTasks.push(child);
@@ -251,8 +309,12 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
           scenario: scenario.slug,
           hired_capabilities: scenario.specialists.map((specialist) => specialist.capability),
           child_task_ids: childTasks.map((task) => task.task_id),
+          final_memo: `${scenario.label} memo references ${childTasks.length} validated specialist outputs.`,
         },
-        artifacts: childTasks.map((task) => ({ kind: "child_task", task_id: task.task_id })),
+        artifacts: [
+          ...childTasks.map((task) => artifactReference(scenario.slug, "child_task", task.task_id)),
+          artifactReference(scenario.slug, "final_research_memo", parent.task_id),
+        ],
       }, { agentId: network.coordinator.agent_id });
       await client.resolveTask(parent.task_id, { resolution: "completed", quality_score: 95, review_score: 5 }, { agentId: network.sponsor.agent_id });
       const parentDetail = await client.getTaskDetail(parent.task_id);
@@ -315,8 +377,9 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
       <header className="border-b border-[var(--border)] bg-[var(--panel)]">
         <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)_auto] xl:items-center">
           <div>
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw live delegation</div>
-            <h1 className="mt-1 text-xl font-semibold">Autonomous agent hiring graph</h1>
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw research workbench</div>
+            <h1 className="mt-1 text-xl font-semibold">Escrow-backed Web3 agent research</h1>
+            <span className="sr-only">Autonomous agent hiring graph</span>
           </div>
           <div className="grid gap-2 md:grid-cols-4">
             <Field label="api">
@@ -350,17 +413,31 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
       <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_400px]">
         <section className="min-h-[calc(100vh-112px)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
           <div className="border-b border-[var(--border)] bg-[var(--demo-band)] px-4 py-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
               <div>
                 <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                  <Coins size={13} /> real SDK flow
+                  <Coins size={13} /> Demo / Mock Settlement
                 </div>
-                <h2 className="text-lg font-semibold">Spin up a delegation market and watch the protocol graph settle.</h2>
-                <p className="mt-1 max-w-[74ch] text-sm text-[var(--muted)]">
-                  These demos register agents, discover specialists by capability, create escrow-backed child tasks, resolve results, then load the graph returned by the API.
+                <h2 className="text-lg font-semibold">Crypto Launch / Market Intelligence</h2>
+                <p className="mt-1 max-w-[82ch] text-sm text-[var(--muted)]">
+                  Create a funded research task, assemble a coordinator and specialist agents, inspect proof and lineage, then approve or dispute settlement.
+                  SDK/API state is real; runtime execution and settlement are mocked unless configured otherwise.
                 </p>
+                <div className="mt-3 grid gap-2 text-xs text-[var(--foreground)] md:grid-cols-3">
+                  <TaskPackFact icon={<ShieldCheck size={14} />} label="escrow" value="locked on create" />
+                  <TaskPackFact icon={<Users size={14} />} label="team" value={`${CRYPTO_LAUNCH_TASK_PACK.specialists.length} specialists`} />
+                  <TaskPackFact icon={<Timer size={14} />} label="review" value={`${CRYPTO_LAUNCH_TASK_PACK.reviewWindowHours}h window`} />
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2 lg:justify-end">
+              <div className="grid gap-2 lg:justify-items-end">
+                <Button
+                  onClick={() => void runDemoScenario(CRYPTO_LAUNCH_TASK_PACK)}
+                  busy={busy === `demo:${CRYPTO_LAUNCH_TASK_PACK.slug}`}
+                  icon={<Rocket size={16} style={{ color: toneColor(CRYPTO_LAUNCH_TASK_PACK.accent) }} />}
+                >
+                  Run task pack
+                </Button>
+                <div className="flex flex-wrap gap-2 lg:justify-end">
                 {DEMO_SCENARIOS.map((scenario) => (
                   <Button
                     key={scenario.slug}
@@ -372,6 +449,7 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
                     {scenario.label}
                   </Button>
                 ))}
+                </div>
               </div>
             </div>
           </div>
@@ -475,6 +553,18 @@ function Signal({ icon, label, value }: { icon: React.ReactNode; label: string; 
   );
 }
 
+function TaskPackFact({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[18px_1fr] items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2">
+      <span className="text-[var(--accent)]">{icon}</span>
+      <span>
+        <span className="mr-2 text-[var(--muted)]">{label}</span>
+        <span className="font-semibold">{value}</span>
+      </span>
+    </div>
+  );
+}
+
 function LifecycleRail({ activeIndex, activeStatus }: { activeIndex: number; activeStatus: TaskStatus | null }) {
   return (
     <div className="grid gap-2">
@@ -511,29 +601,92 @@ function MarketBar({ label, value, max, tone }: { label: string; value: number; 
 }
 
 function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDto | null; detail: TaskDetailDto | null; events: EventItem[]; tasks: TaskDto[]; onSelectTask: (taskId: string) => void }) {
+  const contract = detail?.task_contract ?? null;
+  const proof = detail?.proof ?? null;
+  const childTasks = task
+    ? tasks.filter((item) => item.parent_task_id === task.task_id || (task.parent_task_id !== null && item.parent_task_id === task.parent_task_id && item.task_id !== task.task_id))
+    : [];
   return (
     <>
       <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">compact inspector</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">task contract</div>
             <h2 className="mt-1 text-base font-semibold">{task ? task.task_id : "No active task"}</h2>
           </div>
           {task && <StatusBadge status={task.status} />}
         </div>
         {task ? (
           <div className="grid gap-3 p-4">
-            <Metric label="hirer_agent_id" value={task.hirer_agent_id} />
-            <Metric label="worker_agent_id" value={task.worker_agent_id} />
-            <Metric label="skill_id" value={task.skill_id} />
+            <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold">{contract?.task_pack ?? "custom_research"}</span>
+                <span className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted)]">{contract?.privacy_level ?? "private"}</span>
+              </div>
+              <div className="text-sm text-[var(--muted)]">{projectLine(contract?.project_context)}</div>
+            </div>
             <Metric label="payment_lamports" value={formatLamports(task.payment_lamports)} />
-            <Metric label="worker_payout_lamports" value={formatLamports(task.worker_payout_lamports)} />
-            <Metric label="escrow_account" value={task.escrow_account ?? "none"} />
+            <Metric label="delegation_budget_lamports" value={contract?.delegation_budget_lamports ? formatLamports(contract.delegation_budget_lamports) : "not allocated"} />
             <Metric label="deadline" value={formatDate(task.deadline)} />
+            <Checklist title="acceptance criteria" items={contract?.acceptance_criteria ?? []} />
+            <Checklist title="permission scope" items={contract?.permission_scope ?? []} />
           </div>
         ) : (
           <div className="p-4 text-sm text-[var(--muted)]">No protocol tasks are available for visualization.</div>
         )}
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Escrow Proof</h2>
+          <ShieldCheck size={16} className="text-[var(--muted)]" />
+        </div>
+        {task && proof ? (
+          <div className="grid gap-3 p-4">
+            <ProofRow label="mode" value={proof.environment} tone={proof.environment === "production" ? "success" : "warning"} />
+            <ProofRow label="escrow" value={proof.escrow.locked ? "locked" : "not locked"} tone={proof.escrow.locked ? "success" : "danger"} />
+            <Metric label="escrow_account" value={proof.escrow.escrow_account ?? "none"} />
+            <Metric label="escrow_tx_signature" value={proof.escrow.tx_signature ?? "none"} />
+            <ProofRow label="settlement" value={settlementLabel(proof)} tone={proof.settlement.released ? "success" : proof.settlement.refunded || proof.settlement.disputed ? "warning" : "info"} />
+            <ProofRow label="artifacts" value={`${proof.artifacts.validated_count}/${proof.artifacts.count} validated`} tone={proof.artifacts.count === proof.artifacts.validated_count && proof.artifacts.count > 0 ? "success" : "warning"} />
+            <ProofRow label="unsafe" value={`${proof.artifacts.unsafe_count} flagged`} tone={proof.artifacts.unsafe_count > 0 ? "danger" : "success"} />
+            <ProofRow label="private runtime" value={`${proof.artifacts.private_runtime_count} hidden`} tone={proof.artifacts.private_runtime_count > 0 ? "warning" : "success"} />
+            <ArtifactProofList references={proof.artifacts.references} />
+          </div>
+        ) : (
+          <div className="p-4 text-sm text-[var(--muted)]">Escrow and artifact proof appears after selecting a task.</div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Agent Team</h2>
+          <Users size={16} className="text-[var(--muted)]" />
+        </div>
+        <div className="max-h-[260px] overflow-auto p-4">
+          {task ? (
+            <div className="grid gap-2">
+              <TeamRow label="coordinator/worker" task={task} />
+              {childTasks.map((item) => <TeamRow key={item.task_id} label="specialist" task={item} />)}
+              {childTasks.length === 0 && <div className="text-sm text-[var(--muted)]">Child tasks appear here when the coordinator delegates work.</div>}
+            </div>
+          ) : (
+            <div className="text-sm text-[var(--muted)]">No agent team selected.</div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Review Rules</h2>
+          <FileCheck2 size={16} className="text-[var(--muted)]" />
+        </div>
+        <div className="grid gap-2 p-4 text-sm">
+          <Rule label="approval" value={contract?.settlement_rules.approval ?? "hirer approval releases worker payout and records reputation"} />
+          <Rule label="rejection" value={contract?.settlement_rules.rejection ?? "failed work refunds escrow"} />
+          <Rule label="dispute" value={contract?.settlement_rules.dispute_resolution ?? "manual evaluator/admin review"} />
+          <Rule label="timeout" value={contract?.settlement_rules.timeout ?? "deadline expiry moves submitted work to dispute or refunds active work"} />
+        </div>
       </section>
 
       <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
@@ -587,6 +740,70 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="grid gap-1 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
       <div className="text-xs font-medium text-[var(--muted)]">{label}</div>
       <div className="break-all text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function Checklist({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="text-xs font-medium text-[var(--muted)]">{title}</div>
+      {items.length > 0 ? items.map((item) => (
+        <div key={item} className="grid grid-cols-[16px_1fr] gap-2 text-sm">
+          <CheckCircle2 size={14} className="mt-0.5 text-[var(--accent)]" />
+          <span>{item}</span>
+        </div>
+      )) : <div className="text-sm text-[var(--muted)]">none declared</div>}
+    </div>
+  );
+}
+
+function ProofRow({ label, value, tone }: { label: string; value: string; tone: StatusTone }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+      <span className="text-[var(--muted)]">{label}</span>
+      <span className="font-semibold" style={{ color: toneColor(tone) }}>{value}</span>
+    </div>
+  );
+}
+
+function ArtifactProofList({ references }: { references: TaskDetailDto["proof"]["artifacts"]["references"] }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="text-xs font-medium text-[var(--muted)]">artifact references</div>
+      {references.length > 0 ? references.map((reference, index) => (
+        <div key={`${reference.kind}:${reference.hash ?? index}`} className="grid grid-cols-[1fr_auto] gap-3 text-sm">
+          <span className="min-w-0">
+            <span className="block truncate font-medium">{reference.kind}</span>
+            <span className="block truncate font-mono text-xs text-[var(--muted)]">{reference.hash ?? "missing hash"}</span>
+          </span>
+          <span className="rounded border px-2 py-1 text-xs" style={{ borderColor: artifactTone(reference.validation_status), color: artifactTone(reference.validation_status) }}>
+            {reference.validation_status}
+          </span>
+        </div>
+      )) : <div className="text-sm text-[var(--muted)]">No artifact references submitted.</div>}
+    </div>
+  );
+}
+
+function TeamRow({ label, task }: { label: string; task: TaskDto }) {
+  return (
+    <div className="grid w-full grid-cols-[1fr_auto] gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] p-3 text-left text-sm">
+      <span className="min-w-0">
+        <span className="block text-xs font-medium text-[var(--muted)]">{label}</span>
+        <span className="block truncate font-mono">{task.worker_agent_id}</span>
+        <span className="block truncate text-xs text-[var(--muted)]">{formatLamports(task.worker_payout_lamports)} / {formatDate(task.deadline)}</span>
+      </span>
+      <StatusBadge status={task.status} />
+    </div>
+  );
+}
+
+function Rule({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="mb-1 text-xs font-medium text-[var(--muted)]">{label}</div>
+      <div>{value}</div>
     </div>
   );
 }
@@ -888,6 +1105,52 @@ function cleanTaskFilters(filters: ListTasksFilters): ListTasksFilters {
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)) as ListTasksFilters;
 }
 
+function taskPackPayload(scenario: DemoScenario) {
+  if (!isTaskPackScenario(scenario)) {
+    return {};
+  }
+  return {
+    task_pack: "crypto_launch_market_intelligence",
+    project_context: scenario.projectContext,
+    research_questions: scenario.researchQuestions,
+    acceptance_criteria: scenario.acceptanceCriteria,
+    permission_scope: scenario.permissionScope,
+    delegation_budget_lamports: scenario.delegationBudgetLamports,
+    privacy_level: scenario.privacyLevel,
+    review_window_hours: scenario.reviewWindowHours,
+    settlement_mode: scenario.settlementMode,
+  };
+}
+
+function childTaskPayload(scenario: DemoScenario, specialist: DemoScenario["specialists"][number]) {
+  if (!isTaskPackScenario(scenario)) {
+    return {};
+  }
+  return {
+    task_pack: `${specialist.capability}_evidence`,
+    project_context: scenario.projectContext,
+    research_questions: scenario.researchQuestions,
+    acceptance_criteria: [`Produce evidence for ${specialist.capability}`, "Attach artifact reference with hash and safety label"],
+    permission_scope: scenario.permissionScope.filter((permission) => permission !== "read_child_task_details"),
+    privacy_level: scenario.privacyLevel,
+    review_window_hours: scenario.reviewWindowHours,
+    settlement_mode: scenario.settlementMode,
+  };
+}
+
+function artifactReference(scenarioSlug: string, kind: string, taskId: string) {
+  return {
+    kind,
+    task_id: taskId,
+    hash: `sha256:${stableHash(`${scenarioSlug}:${kind}:${taskId}`)}`,
+    safety_label: "validated",
+  };
+}
+
+function isTaskPackScenario(scenario: DemoScenario): scenario is TaskPackScenario {
+  return "projectContext" in scenario;
+}
+
 async function createDelegationNetwork(client: ReturnType<typeof createOmniClawClient>, scenario: DemoScenario) {
   const runId = `${scenario.slug}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   const sponsorWallet = `wallet_${runId}_sponsor`;
@@ -920,6 +1183,15 @@ async function createDelegationNetwork(client: ReturnType<typeof createOmniClawC
       properties: {
         mission: { type: "string" },
         runtime_submit_result: { type: "boolean" },
+        task_pack: { type: "string" },
+        project_context: { type: "object" },
+        research_questions: { type: "array" },
+        acceptance_criteria: { type: "array" },
+        permission_scope: { type: "array" },
+        delegation_budget_lamports: { type: "string" },
+        privacy_level: { type: "string" },
+        review_window_hours: { type: "number" },
+        settlement_mode: { type: "string" },
       },
     },
     output_schema: {
@@ -960,6 +1232,14 @@ async function createDelegationNetwork(client: ReturnType<typeof createOmniClawC
           capability: { type: "string" },
           brief: { type: "string" },
           parent_mission: { type: "string" },
+          task_pack: { type: "string" },
+          project_context: { type: "object" },
+          research_questions: { type: "array" },
+          acceptance_criteria: { type: "array" },
+          permission_scope: { type: "array" },
+          privacy_level: { type: "string" },
+          review_window_hours: { type: "number" },
+          settlement_mode: { type: "string" },
         },
       },
       output_schema: {
@@ -1003,6 +1283,19 @@ function toneColor(tone: StatusTone) {
   return colors[tone];
 }
 
+function artifactTone(status: TaskDetailDto["proof"]["artifacts"]["references"][number]["validation_status"]) {
+  if (status === "validated") {
+    return toneColor("success");
+  }
+  if (status === "unsafe") {
+    return toneColor("danger");
+  }
+  if (status === "private_runtime") {
+    return toneColor("warning");
+  }
+  return toneColor("info");
+}
+
 function average(values: number[]) {
   if (values.length === 0) {
     return 0;
@@ -1016,6 +1309,37 @@ function clamp(value: number, min: number, max: number) {
 
 function formatLamports(value: string) {
   return `${Number(value).toLocaleString()} lamports`;
+}
+
+function projectLine(projectContext: Record<string, unknown> | undefined) {
+  if (!projectContext) {
+    return "No project context declared";
+  }
+  const project = typeof projectContext.project_name === "string" ? projectContext.project_name : "Unnamed project";
+  const token = typeof projectContext.token_symbol === "string" ? projectContext.token_symbol : "n/a";
+  const chain = typeof projectContext.target_chain === "string" ? projectContext.target_chain : "n/a";
+  return `${project} / ${token} / ${chain}`;
+}
+
+function settlementLabel(proof: NonNullable<TaskDetailDto["proof"]>) {
+  if (proof.settlement.released) {
+    return "payout released";
+  }
+  if (proof.settlement.refunded) {
+    return "hirer refunded";
+  }
+  if (proof.settlement.disputed) {
+    return "in dispute";
+  }
+  return proof.escrow.locked ? "awaiting review" : "unfunded";
+}
+
+function stableHash(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 function compactLamports(value: string) {

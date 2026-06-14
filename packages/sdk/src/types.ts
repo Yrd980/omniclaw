@@ -26,6 +26,17 @@ export type ActorHeaders = {
   role?: "admin" | "evaluator";
 };
 
+export type HealthDto = {
+  ok: boolean;
+  environment: "local" | "demo" | "testnet" | "production";
+  store: "memory" | "postgres";
+  runtime_adapter: "mock" | "grpc";
+  settlement_adapter: "mock";
+  auth_mode: "headers" | "signed";
+  production_ready: boolean;
+  warnings: string[];
+};
+
 export type AgentDto = {
   agent_id: string;
   publisher_wallet: string;
@@ -104,6 +115,92 @@ export type TaskDto = {
   updated_at: string;
 };
 
+export type TaskContractDto = {
+  task_pack: string;
+  project_context: JsonObject;
+  research_questions: string[];
+  acceptance_criteria: string[];
+  permission_scope: string[];
+  delegation_budget_lamports: string | null;
+  privacy_level: string;
+  review_window_hours: number;
+  settlement_mode: string;
+  settlement_rules: {
+    escrow_required: true;
+    worker_starts_after_escrow: true;
+    approval: string;
+    rejection: string;
+    dispute_resolution: string;
+    timeout: string;
+  };
+  frozen_at: string;
+};
+
+export type TaskProofDto = {
+  environment: string;
+  escrow: {
+    locked: boolean;
+    escrow_account: string | null;
+    tx_signature: string | null;
+    locked_at: string | null;
+  };
+  execution: {
+    status: TaskStatus;
+    accepted_at: string | null;
+    submitted_at: string | null;
+    completed_at: string | null;
+  };
+  artifacts: {
+    count: number;
+    validated_count: number;
+    unsafe_count: number;
+    private_runtime_count: number;
+    references: ArtifactReferenceDto[];
+  };
+  settlement: {
+    released: boolean;
+    refunded: boolean;
+    disputed: boolean;
+    tx_signature: string | null;
+  };
+  reputation: {
+    events: number;
+    worker_delta: number;
+  };
+};
+
+export type ArtifactValidationStatus = "validated" | "missing_hash" | "unsafe" | "private_runtime" | "unvalidated";
+
+export type ArtifactReferenceDto = {
+  kind: string;
+  task_id: string | null;
+  uri: string | null;
+  hash: string | null;
+  checksum: string | null;
+  safety_label: string | null;
+  validation_status: ArtifactValidationStatus;
+  displayable: boolean;
+};
+
+export type ArtifactReferenceInput = {
+  kind?: string;
+  task_id?: string;
+  uri?: string;
+  hash?: string;
+  checksum?: string;
+  safety_label?: string;
+  private_runtime?: boolean;
+  tags?: string[];
+  [key: string]: unknown;
+};
+
+export type TaskProofSummaryDto = {
+  escrow_locked: boolean;
+  artifact_count: number;
+  validated_artifact_count: number;
+  settlement_state: "locked" | "released" | "refunded" | "disputed" | "failed" | "unfunded";
+};
+
 export type CreateTaskInput = {
   parent_task_id?: string | null;
   hirer_agent_id: string;
@@ -129,13 +226,14 @@ export type TaskResultDto = {
   worker_agent_id: string;
   result_payload: JsonObject;
   artifacts: unknown[];
+  artifact_references: ArtifactReferenceDto[];
   quality_score: number | null;
   submitted_at: string;
 };
 
 export type SubmitResultInput = {
   result_payload: JsonObject;
-  artifacts?: unknown[];
+  artifacts?: ArtifactReferenceInput[];
 };
 
 export type ResolveTaskInput = {
@@ -195,6 +293,8 @@ export type DiscoveryResultDto = {
 
 export type TaskDetailDto = {
   task: TaskDto;
+  task_contract: TaskContractDto;
+  proof: TaskProofDto;
   result: TaskResultDto | null;
   settlement_events: SettlementEventDto[];
   reputation_events: ReputationEventDto[];
@@ -206,10 +306,14 @@ export type TaskGraphDto = {
     taskId: string;
     parentTaskId: string | null;
     workerAgentId: string;
+    skillId: string;
     status: TaskStatus;
     paymentLamports: string;
     workerPayoutLamports: string;
     deadline: string;
+    taskPack: string;
+    privacyLevel: string;
+    proof: TaskProofSummaryDto;
   }>;
   edges: Array<{ from: string; to: string }>;
 };

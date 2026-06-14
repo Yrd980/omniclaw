@@ -17,7 +17,7 @@ export const createRuntimeAdapterFromEnv = (env: RuntimeAdapterEnv = runtimeEnvF
   return new MockRuntimeAdapter();
 };
 
-const parseRuntimeAdapterMode = (value: string): RuntimeAdapterMode => {
+export const parseRuntimeAdapterMode = (value: string): RuntimeAdapterMode => {
   if (value === "mock" || value === "grpc") {
     return value;
   }

@@ -3,6 +3,7 @@ import { runtimeAcceptedTaskPayload, type RuntimeAdapter } from "../adapters/run
 import type { FeeConfig } from "../config";
 import { invariant } from "../errors";
 import type { DataStore } from "../store";
+import { taskContractDto, taskProofSummaryDto } from "../task-contracts";
 import type { Actor, JsonObject, ReputationEvent, SettlementEvent, Task, TaskResult, TaskStatus } from "../types";
 import { validatePayloadAgainstSchema } from "../validation";
 import { requireHirerOrEvaluator, requireWorker } from "./authorization";
@@ -238,14 +239,25 @@ export const getTaskGraph = async (store: DataStore, taskId: string) => {
   visit(root);
   return {
     rootTaskId: root.id,
-    nodes: nodes.map((task) => ({
-      taskId: task.id,
-      parentTaskId: task.parentTaskId,
-      workerAgentId: task.workerAgentId,
-      status: task.status,
-      paymentLamports: task.paymentLamports,
-      workerPayoutLamports: task.workerPayoutLamports,
-      deadline: task.deadline,
+    nodes: await Promise.all(nodes.map(async (task) => {
+      const contract = taskContractDto(task);
+      return {
+        taskId: task.id,
+        parentTaskId: task.parentTaskId,
+        workerAgentId: task.workerAgentId,
+        skillId: task.skillId,
+        status: task.status,
+        paymentLamports: task.paymentLamports,
+        workerPayoutLamports: task.workerPayoutLamports,
+        deadline: task.deadline,
+        taskPack: contract.task_pack,
+        privacyLevel: contract.privacy_level,
+        proof: taskProofSummaryDto(
+          task,
+          await store.getTaskResultForTask(task.id),
+          await store.listSettlementEventsByFilters({ taskId: task.id }),
+        ),
+      };
     })),
     edges,
   };

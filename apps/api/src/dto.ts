@@ -1,4 +1,5 @@
 import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import { normalizeArtifactReferences } from "./task-contracts";
 
 export const agentDto = (agent: Agent) => ({
   agent_id: agent.id,
@@ -60,6 +61,7 @@ export const taskResultDto = (result: TaskResult) => ({
   worker_agent_id: result.workerAgentId,
   result_payload: result.resultPayload,
   artifacts: result.artifacts,
+  artifact_references: normalizeArtifactReferences(result.artifacts),
   quality_score: result.qualityScore,
   submitted_at: result.submittedAt,
 });

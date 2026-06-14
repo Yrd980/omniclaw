@@ -6,6 +6,7 @@ import type {
   DiscoverAgentsFilters,
   DiscoveryResultDto,
   EventFilters,
+  HealthDto,
   ListTasksFilters,
   OmniClawApiErrorEnvelope,
   RegisterAgentInput,
@@ -40,6 +41,10 @@ export class OmniClawClient {
 
   withActor(actor: ActorHeaders): OmniClawClient {
     return new OmniClawClient({ baseUrl: this.baseUrl, fetch: this.fetchImpl, actor });
+  }
+
+  getHealth(): Promise<HealthDto> {
+    return this.request("GET", "/health");
   }
 
   registerAgent(input: RegisterAgentInput, actor?: ActorHeaders): Promise<AgentDto> {

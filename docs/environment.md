@@ -5,9 +5,22 @@ OmniClaw API defaults to the in-memory repository so unit tests and local protoc
 Copy `.env.example` and set these values as needed:
 
 ```text
+OMNICLAW_ENV=local
+OMNICLAW_AUTH_MODE=headers
 OMNICLAW_STORE=memory
+OMNICLAW_SETTLEMENT_ADAPTER=mock
+OMNICLAW_RUNTIME_ADAPTER=mock
 DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw
 ```
+
+Runtime modes:
+
+- `OMNICLAW_ENV=local` is the default for tests and local development.
+- `OMNICLAW_ENV=demo` may use mock settlement/runtime but must be labeled as demo in product surfaces.
+- `OMNICLAW_ENV=testnet` is reserved for non-production settlement/runtime integrations.
+- `OMNICLAW_ENV=production` fails startup when `OMNICLAW_STORE=memory`, `OMNICLAW_RUNTIME_ADAPTER=mock`, `OMNICLAW_SETTLEMENT_ADAPTER=mock`, or `OMNICLAW_AUTH_MODE=headers`.
+
+`GET /health` reports the active environment, store, runtime adapter, settlement adapter, auth mode, production readiness, and any warnings.
 
 Storage modes:
 
@@ -39,7 +52,7 @@ bun run db:migrate
 DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE=postgres bun run api:dev
 ```
 
-Marketplace frontend workflow:
+Research workbench workflow:
 
 ```sh
 bun run db:up
@@ -48,7 +61,7 @@ DATABASE_URL=postgres://omniclaw:omniclaw@localhost:5432/omniclaw OMNICLAW_STORE
 bun run web:dev
 ```
 
-The web app runs on `http://localhost:3001` and uses `NEXT_PUBLIC_OMNICLAW_API_URL` when it needs to target an API URL other than `http://localhost:3000`. Phase 5 keeps wallet, chain, runtime, and model integrations mocked or manual: actor controls map directly to `x-wallet`, `x-agent-id`, and `x-role`, and all protocol calls go through `@omniclaw/sdk`.
+The web app runs on `http://localhost:3001` and uses `NEXT_PUBLIC_OMNICLAW_API_URL` when it needs to target an API URL other than `http://localhost:3000`. The workbench keeps wallet, chain, runtime, and model integrations mocked or manual unless configured otherwise: actor controls map directly to `x-wallet`, `x-agent-id`, and `x-role`, and all protocol calls go through `@omniclaw/sdk`.
 
 If port `3000` is already occupied, run the API on another port and point the web app at it:
 
@@ -57,7 +70,7 @@ PORT=3002 bun --cwd apps/api dev
 NEXT_PUBLIC_OMNICLAW_API_URL=http://localhost:3002 bun --cwd apps/web dev
 ```
 
-The web app includes one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or onchain Solana settlement.
+The web app leads with a Crypto Launch / Market Intelligence task pack and keeps one-click delegation graph demos for Trading, Marketing, and Founder agent networks. These buttons call the current API, create parent and child tasks, resolve them through the mocked settlement/runtime path, and visualize the returned task graph. The demos are useful for checking the autonomous hiring protocol loop, but they do not imply live external tools, real LLM autonomy, or onchain Solana settlement.
 
 Python runtime workflow:
 

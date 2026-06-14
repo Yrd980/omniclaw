@@ -3,11 +3,18 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createRuntimeAdapterFromEnv } from "./adapters/runtime-factory";
 import { MockSettlementAdapter } from "./adapters/settlement";
-import { DEFAULT_DISCOVERY_RANKING_CONFIG, type DiscoveryRankingConfig } from "./config";
+import {
+  assertProductionReadyConfig,
+  DEFAULT_DISCOVERY_RANKING_CONFIG,
+  runtimeConfigFromEnv,
+  type DiscoveryRankingConfig,
+  type RuntimeConfig,
+} from "./config";
 import { agentDto, reputationEventDto, settlementEventDto, skillDto, taskDto, taskResultDto } from "./dto";
 import { ApiError } from "./errors";
 import { createPostgresStore } from "./postgres-store";
 import { createMemoryStore, type DataStore } from "./store";
+import { taskContractDto, taskProofDto } from "./task-contracts";
 import { registerAgent, registerSkill } from "./services/agents";
 import { actorFromHeaders } from "./services/authorization";
 import { discoverAgents } from "./services/discovery";
@@ -36,10 +43,13 @@ export type AppEnv = {
   store: DataStore;
   taskDeps: TaskServiceDeps;
   discoveryRanking: DiscoveryRankingConfig;
+  runtimeConfig: RuntimeConfig;
 };
 
 export const createApp = (env: Partial<AppEnv> = {}) => {
-  const store = env.store ?? createStoreFromEnv();
+  const runtimeConfig = env.runtimeConfig ?? runtimeConfigFromEnv();
+  assertProductionReadyConfig(runtimeConfig);
+  const store = env.store ?? createStoreFromEnv(runtimeConfig);
   const taskDeps = env.taskDeps ?? {
     store,
     settlement: new MockSettlementAdapter(undefined, store.now),
@@ -68,7 +78,16 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     return c.json({ error: { code: "INTERNAL_ERROR", message: "internal server error", details: null, path: new URL(c.req.url).pathname } }, 500);
   });
 
-  app.get("/health", (c) => c.json({ ok: true }));
+  app.get("/health", (c) => c.json({
+    ok: true,
+    environment: runtimeConfig.environment,
+    store: runtimeConfig.storeMode,
+    runtime_adapter: runtimeConfig.runtimeAdapterMode,
+    settlement_adapter: runtimeConfig.settlementAdapterMode,
+    auth_mode: runtimeConfig.authMode,
+    production_ready: runtimeConfig.productionReady,
+    warnings: runtimeConfig.warnings,
+  }));
 
   app.post("/agents", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
@@ -162,6 +181,8 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     const reputationEvents = await store.listReputationEventsByFilters({ taskId: task.id });
     return c.json({
       task: taskDto(task),
+      task_contract: taskContractDto(task),
+      proof: taskProofDto(task, result, settlementEvents, reputationEvents),
       result: result ? taskResultDto(result) : null,
       settlement_events: settlementEvents.map(settlementEventDto),
       reputation_events: reputationEvents.map(reputationEventDto),
@@ -232,8 +253,8 @@ const notFound = (message: string, request: Request) => ({
   },
 });
 
-const createStoreFromEnv = () => {
-  if (process.env.OMNICLAW_STORE === "postgres") {
+const createStoreFromEnv = (config: RuntimeConfig) => {
+  if (config.storeMode === "postgres") {
     return createPostgresStore(createDatabaseConnection().db);
   }
   return createMemoryStore();
