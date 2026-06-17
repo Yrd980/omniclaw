@@ -2,7 +2,7 @@ import { createDatabaseConnection } from "@omniclaw/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createRuntimeAdapterFromEnv } from "./adapters/runtime-factory";
-import { MockSettlementAdapter } from "./adapters/settlement";
+import { MockSettlementAdapter, SolanaTestnetSettlementAdapter } from "./adapters/settlement";
 import {
   assertProductionReadyConfig,
   DEFAULT_DISCOVERY_RANKING_CONFIG,
@@ -52,7 +52,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   const store = env.store ?? createStoreFromEnv(runtimeConfig);
   const taskDeps = env.taskDeps ?? {
     store,
-    settlement: new MockSettlementAdapter(undefined, store.now),
+    settlement: createSettlementAdapter(runtimeConfig, store.now),
     runtime: createRuntimeAdapterFromEnv(),
   };
   const discoveryRanking = env.discoveryRanking ?? DEFAULT_DISCOVERY_RANKING_CONFIG;
@@ -177,13 +177,14 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
       return c.json(notFound("task not found", c.req.raw), 404);
     }
     const result = await store.getTaskResultForTask(task.id);
+    const deliveryManifest = result ? await store.getDeliveryManifestForResult(result.id) : undefined;
     const settlementEvents = await store.listSettlementEventsByFilters({ taskId: task.id });
     const reputationEvents = await store.listReputationEventsByFilters({ taskId: task.id });
     return c.json({
       task: taskDto(task),
       task_contract: taskContractDto(task),
-      proof: taskProofDto(task, result, settlementEvents, reputationEvents),
-      result: result ? taskResultDto(result) : null,
+      proof: taskProofDto(task, result, deliveryManifest, settlementEvents, reputationEvents),
+      result: result ? taskResultDto(result, deliveryManifest) : null,
       settlement_events: settlementEvents.map(settlementEventDto),
       reputation_events: reputationEvents.map(reputationEventDto),
     });
@@ -198,8 +199,10 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     const result = await submitResult(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), {
       result_payload: optionalJsonObject(body, "result_payload"),
       artifacts: optionalArray(body, "artifacts"),
+      delivery_manifest: optionalJsonObject(body, "delivery_manifest"),
     });
-    return c.json(taskResultDto(result), 201);
+    const deliveryManifest = result.deliveryManifestId ? await store.getDeliveryManifestForResult(result.id) : undefined;
+    return c.json(taskResultDto(result, deliveryManifest), 201);
   });
 
   app.post("/tasks/:taskId/resolve", async (c) => {
@@ -258,4 +261,11 @@ const createStoreFromEnv = (config: RuntimeConfig) => {
     return createPostgresStore(createDatabaseConnection().db);
   }
   return createMemoryStore();
+};
+
+const createSettlementAdapter = (config: RuntimeConfig, now: () => string) => {
+  if (config.settlementAdapterMode === "solana_testnet") {
+    return new SolanaTestnetSettlementAdapter();
+  }
+  return new MockSettlementAdapter(undefined, now);
 };

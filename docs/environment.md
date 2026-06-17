@@ -19,8 +19,19 @@ Runtime modes:
 - `OMNICLAW_ENV=demo` may use mock settlement/runtime but must be labeled as demo in product surfaces.
 - `OMNICLAW_ENV=testnet` is reserved for non-production settlement/runtime integrations.
 - `OMNICLAW_ENV=production` fails startup when `OMNICLAW_STORE=memory`, `OMNICLAW_RUNTIME_ADAPTER=mock`, `OMNICLAW_SETTLEMENT_ADAPTER=mock`, or `OMNICLAW_AUTH_MODE=headers`.
+- `OMNICLAW_SETTLEMENT_ADAPTER=solana_testnet` is accepted as a staged configuration seam for the future Solana adapter. It does not implement live escrow yet; settlement operations fail explicitly until the adapter is built and verified.
 
 `GET /health` reports the active environment, store, runtime adapter, settlement adapter, auth mode, production readiness, and any warnings.
+
+Future Solana testnet adapter settings are reserved now so deployments can express intent without putting Task payloads, Artifacts, Delivery Manifests, Verifier output, or Runtime logs onchain:
+
+```text
+OMNICLAW_SETTLEMENT_ADAPTER=solana_testnet
+SOLANA_RPC_URL=https://api.testnet.solana.com
+OMNICLAW_SOLANA_PROGRAM_ID=
+OMNICLAW_SOLANA_COMMITMENT=confirmed
+OMNICLAW_SOLANA_MINT=
+```
 
 Storage modes:
 

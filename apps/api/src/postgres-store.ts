@@ -1,7 +1,7 @@
 import { and, eq, gte, isNull, lte, type SQL } from "drizzle-orm";
-import { agents, reputationEvents, settlementEvents, skills, taskResults, tasks, type DatabaseConnection } from "@omniclaw/db";
+import { agents, deliveryManifests, reputationEvents, settlementEvents, skills, taskResults, tasks, type DatabaseConnection } from "@omniclaw/db";
 import type { DataStore, EventFilters, TaskFilters } from "./store";
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, DeliveryManifest, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
 
 type DrizzleDb = DatabaseConnection["db"];
 
@@ -14,6 +14,7 @@ export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
   skills: new Map(),
   tasks: new Map(),
   taskResults: new Map(),
+  deliveryManifests: new Map(),
   reputationEvents: new Map(),
   settlementEvents: new Map(),
   nextId(prefix: string) {
@@ -85,6 +86,20 @@ export const createPostgresStore = (db: DrizzleDb): PostgresStore => ({
   async getTaskResultForTask(taskId: string) {
     const [row] = await db.select().from(taskResults).where(eq(taskResults.taskId, taskId)).limit(1);
     return row ? taskResultFromRow(row) : undefined;
+  },
+  async saveDeliveryManifest(deliveryManifest: DeliveryManifest) {
+    await db.insert(deliveryManifests).values(deliveryManifestToRow(deliveryManifest)).onConflictDoUpdate({
+      target: deliveryManifests.id,
+      set: deliveryManifestToRow(deliveryManifest),
+    });
+  },
+  async getDeliveryManifestForResult(taskResultId: string) {
+    const [row] = await db.select().from(deliveryManifests).where(eq(deliveryManifests.taskResultId, taskResultId)).limit(1);
+    return row ? deliveryManifestFromRow(row) : undefined;
+  },
+  async getDeliveryManifestForTask(taskId: string) {
+    const [row] = await db.select().from(deliveryManifests).where(eq(deliveryManifests.taskId, taskId)).limit(1);
+    return row ? deliveryManifestFromRow(row) : undefined;
   },
   async saveReputationEvent(reputationEvent: ReputationEvent) {
     await db.insert(reputationEvents).values(reputationEventToRow(reputationEvent)).onConflictDoNothing();
@@ -243,6 +258,7 @@ const taskResultToRow = (taskResult: TaskResult) => ({
   workerAgentId: taskResult.workerAgentId,
   resultPayload: taskResult.resultPayload,
   artifacts: taskResult.artifacts,
+  deliveryManifestId: taskResult.deliveryManifestId,
   qualityScore: taskResult.qualityScore,
   submittedAt: new Date(taskResult.submittedAt),
 });
@@ -253,8 +269,43 @@ const taskResultFromRow = (row: typeof taskResults.$inferSelect): TaskResult => 
   workerAgentId: row.workerAgentId,
   resultPayload: jsonObject(row.resultPayload),
   artifacts: jsonArray(row.artifacts),
+  deliveryManifestId: row.deliveryManifestId,
   qualityScore: row.qualityScore,
   submittedAt: toIso(row.submittedAt),
+});
+
+const deliveryManifestToRow = (deliveryManifest: DeliveryManifest) => ({
+  id: deliveryManifest.id,
+  taskResultId: deliveryManifest.taskResultId,
+  taskId: deliveryManifest.taskId,
+  manifestVersion: deliveryManifest.manifestVersion,
+  publicSafe: deliveryManifest.publicSafe,
+  manifestPayload: deliveryManifest.manifestPayload,
+  manifestHash: deliveryManifest.manifestHash,
+  verifierStatus: deliveryManifest.verifierStatus,
+  verifierCommand: deliveryManifest.verifierCommand,
+  verifierExpectedOutput: deliveryManifest.verifierExpectedOutput,
+  verifierExitCode: deliveryManifest.verifierExitCode,
+  verifierStdoutHash: deliveryManifest.verifierStdoutHash,
+  publicSafetyStatus: deliveryManifest.publicSafetyStatus,
+  createdAt: new Date(deliveryManifest.createdAt),
+});
+
+const deliveryManifestFromRow = (row: typeof deliveryManifests.$inferSelect): DeliveryManifest => ({
+  id: row.id,
+  taskResultId: row.taskResultId,
+  taskId: row.taskId,
+  manifestVersion: row.manifestVersion as DeliveryManifest["manifestVersion"],
+  publicSafe: row.publicSafe,
+  manifestPayload: jsonObject(row.manifestPayload),
+  manifestHash: row.manifestHash,
+  verifierStatus: row.verifierStatus as DeliveryManifest["verifierStatus"],
+  verifierCommand: row.verifierCommand,
+  verifierExpectedOutput: row.verifierExpectedOutput,
+  verifierExitCode: row.verifierExitCode,
+  verifierStdoutHash: row.verifierStdoutHash,
+  publicSafetyStatus: row.publicSafetyStatus as DeliveryManifest["publicSafetyStatus"],
+  createdAt: toIso(row.createdAt),
 });
 
 const reputationEventToRow = (event: ReputationEvent) => ({

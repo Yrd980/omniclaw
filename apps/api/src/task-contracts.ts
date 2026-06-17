@@ -1,6 +1,6 @@
-import type { JsonObject, ReputationEvent, SettlementEvent, Task, TaskResult } from "./types";
+import type { DeliveryManifest, JsonObject, ReputationEvent, SettlementEvent, Task, TaskResult } from "./types";
 
-type ArtifactValidationStatus = "validated" | "missing_hash" | "unsafe" | "private_runtime" | "unvalidated";
+export type ArtifactValidationStatus = "validated" | "missing_hash" | "unsafe" | "private_runtime" | "unvalidated";
 
 export type ArtifactReference = {
   kind: string;
@@ -55,6 +55,22 @@ export type TaskProofDto = {
     private_runtime_count: number;
     references: ArtifactReference[];
   };
+  delivery_manifest: {
+    present: boolean;
+    manifest_id: string | null;
+    manifest_version: string | null;
+    manifest_hash: string | null;
+    public_safe: boolean | null;
+    public_safety_status: string | null;
+  };
+  verifier: {
+    configured: boolean;
+    status: string;
+    command: string | null;
+    expected_output: string | null;
+    exit_code: number | null;
+    stdout_hash: string | null;
+  };
   settlement: {
     released: boolean;
     refunded: boolean;
@@ -71,6 +87,9 @@ export type TaskProofSummaryDto = {
   escrow_locked: boolean;
   artifact_count: number;
   validated_artifact_count: number;
+  delivery_manifest_present: boolean;
+  public_safety_status: string | null;
+  verifier_status: string | null;
   settlement_state: "locked" | "released" | "refunded" | "disputed" | "failed" | "unfunded";
 };
 
@@ -101,10 +120,11 @@ export const taskContractDto = (task: Task): TaskContractDto => {
 export const taskProofDto = (
   task: Task,
   result: TaskResult | undefined,
+  deliveryManifest: DeliveryManifest | undefined,
   settlementEvents: SettlementEvent[],
   reputationEvents: ReputationEvent[],
 ): TaskProofDto => {
-  const proofSummary = taskProofSummaryDto(task, result, settlementEvents);
+  const proofSummary = taskProofSummaryDto(task, result, deliveryManifest, settlementEvents);
   const lockedEvent = settlementEvents.find((event) => event.eventType === "escrow_locked");
   const workerDelta = reputationEvents
     .filter((event) => event.agentId === task.workerAgentId)
@@ -124,6 +144,8 @@ export const taskProofDto = (
       completed_at: task.completedAt,
     },
     artifacts: artifactProof(result),
+    delivery_manifest: deliveryManifestProof(deliveryManifest),
+    verifier: verifierProof(deliveryManifest),
     settlement: {
       released: proofSummary.settlement_state === "released",
       refunded: proofSummary.settlement_state === "refunded",
@@ -140,6 +162,7 @@ export const taskProofDto = (
 export const taskProofSummaryDto = (
   task: Task,
   result: TaskResult | undefined,
+  deliveryManifest: DeliveryManifest | undefined,
   settlementEvents: SettlementEvent[],
 ): TaskProofSummaryDto => {
   const artifacts = artifactProof(result);
@@ -147,6 +170,9 @@ export const taskProofSummaryDto = (
     escrow_locked: Boolean(task.escrowAccount && task.escrowTxSignature) || settlementEvents.some((event) => event.eventType === "escrow_locked"),
     artifact_count: artifacts.count,
     validated_artifact_count: artifacts.validated_count,
+    delivery_manifest_present: Boolean(deliveryManifest),
+    public_safety_status: deliveryManifest?.publicSafetyStatus ?? null,
+    verifier_status: deliveryManifest?.verifierStatus ?? null,
     settlement_state: settlementState(task, settlementEvents),
   };
 };
@@ -177,6 +203,24 @@ const artifactProof = (result: TaskResult | undefined): TaskProofDto["artifacts"
     references,
   };
 };
+
+const deliveryManifestProof = (deliveryManifest: DeliveryManifest | undefined): TaskProofDto["delivery_manifest"] => ({
+  present: Boolean(deliveryManifest),
+  manifest_id: deliveryManifest?.id ?? null,
+  manifest_version: deliveryManifest?.manifestVersion ?? null,
+  manifest_hash: deliveryManifest?.manifestHash ?? null,
+  public_safe: deliveryManifest?.publicSafe ?? null,
+  public_safety_status: deliveryManifest?.publicSafetyStatus ?? null,
+});
+
+const verifierProof = (deliveryManifest: DeliveryManifest | undefined): TaskProofDto["verifier"] => ({
+  configured: Boolean(deliveryManifest?.verifierCommand || deliveryManifest?.verifierExpectedOutput),
+  status: deliveryManifest?.verifierStatus ?? "not_submitted",
+  command: deliveryManifest?.verifierCommand ?? null,
+  expected_output: deliveryManifest?.verifierExpectedOutput ?? null,
+  exit_code: deliveryManifest?.verifierExitCode ?? null,
+  stdout_hash: deliveryManifest?.verifierStdoutHash ?? null,
+});
 
 export const normalizeArtifactReferences = (artifacts: unknown[] | undefined): ArtifactReference[] =>
   (artifacts ?? []).map((artifact) => {

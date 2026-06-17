@@ -131,12 +131,39 @@ export const taskResults = pgTable(
     workerAgentId: text("worker_agent_id").notNull().references(() => agents.id),
     resultPayload: jsonb("result_payload").notNull(),
     artifacts: jsonb("artifacts").notNull(),
+    deliveryManifestId: text("delivery_manifest_id"),
     qualityScore: integer("quality_score"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
   },
   (table) => ({
     taskIdIdx: index("task_results_task_id_idx").on(table.taskId),
     workerAgentIdIdx: index("task_results_worker_agent_id_idx").on(table.workerAgentId),
+  }),
+);
+
+export const deliveryManifests = pgTable(
+  "delivery_manifests",
+  {
+    id: text("id").primaryKey(),
+    taskResultId: text("task_result_id").notNull().references(() => taskResults.id),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    manifestVersion: text("manifest_version").notNull(),
+    publicSafe: boolean("public_safe").notNull(),
+    manifestPayload: jsonb("manifest_payload").notNull(),
+    manifestHash: text("manifest_hash").notNull(),
+    verifierStatus: text("verifier_status").notNull(),
+    verifierCommand: text("verifier_command"),
+    verifierExpectedOutput: text("verifier_expected_output"),
+    verifierExitCode: integer("verifier_exit_code"),
+    verifierStdoutHash: text("verifier_stdout_hash"),
+    publicSafetyStatus: text("public_safety_status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    taskResultIdIdx: index("delivery_manifests_task_result_id_idx").on(table.taskResultId),
+    taskIdIdx: index("delivery_manifests_task_id_idx").on(table.taskId),
+    manifestHashIdx: index("delivery_manifests_manifest_hash_idx").on(table.manifestHash),
+    verifierStatusIdx: index("delivery_manifests_verifier_status_idx").on(table.verifierStatus),
   }),
 );
 

@@ -31,7 +31,7 @@ export type HealthDto = {
   environment: "local" | "demo" | "testnet" | "production";
   store: "memory" | "postgres";
   runtime_adapter: "mock" | "grpc";
-  settlement_adapter: "mock";
+  settlement_adapter: "mock" | "solana_testnet";
   auth_mode: "headers" | "signed";
   production_ready: boolean;
   warnings: string[];
@@ -157,6 +157,22 @@ export type TaskProofDto = {
     private_runtime_count: number;
     references: ArtifactReferenceDto[];
   };
+  delivery_manifest: {
+    present: boolean;
+    manifest_id: string | null;
+    manifest_version: string | null;
+    manifest_hash: string | null;
+    public_safe: boolean | null;
+    public_safety_status: PublicSafetyStatus | null;
+  };
+  verifier: {
+    configured: boolean;
+    status: VerifierStatus | "not_submitted";
+    command: string | null;
+    expected_output: string | null;
+    exit_code: number | null;
+    stdout_hash: string | null;
+  };
   settlement: {
     released: boolean;
     refunded: boolean;
@@ -170,6 +186,8 @@ export type TaskProofDto = {
 };
 
 export type ArtifactValidationStatus = "validated" | "missing_hash" | "unsafe" | "private_runtime" | "unvalidated";
+export type VerifierStatus = "not_configured" | "pending" | "passed" | "failed";
+export type PublicSafetyStatus = "public_safe" | "unsafe" | "private" | "inconsistent";
 
 export type ArtifactReferenceDto = {
   kind: string;
@@ -198,7 +216,57 @@ export type TaskProofSummaryDto = {
   escrow_locked: boolean;
   artifact_count: number;
   validated_artifact_count: number;
+  delivery_manifest_present: boolean;
+  public_safety_status: PublicSafetyStatus | null;
+  verifier_status: VerifierStatus | null;
   settlement_state: "locked" | "released" | "refunded" | "disputed" | "failed" | "unfunded";
+};
+
+export type DeliveryManifestInput = {
+  manifest_version: "omniclaw.delivery.v1";
+  task_id: string;
+  source_agent_id: string;
+  task_pack?: string;
+  public_safe: boolean;
+  inputs: Array<{
+    name: string;
+    kind: string;
+    hash: string;
+  }>;
+  outputs: Array<{
+    name: string;
+    kind: string;
+    uri: string;
+    hash: string;
+    safety_label: string;
+  }>;
+  verifier?: {
+    kind: string;
+    entrypoint: string;
+    smoke_command?: string;
+    expected_output: string;
+  } | null;
+  acceptance: {
+    criteria: string[];
+    review_window_hours?: number;
+  };
+};
+
+export type DeliveryManifestDto = {
+  manifest_id: string;
+  task_result_id: string;
+  task_id: string;
+  manifest_version: "omniclaw.delivery.v1";
+  public_safe: boolean;
+  manifest_payload: JsonObject;
+  manifest_hash: string;
+  verifier_status: VerifierStatus;
+  verifier_command: string | null;
+  verifier_expected_output: string | null;
+  verifier_exit_code: number | null;
+  verifier_stdout_hash: string | null;
+  public_safety_status: PublicSafetyStatus;
+  created_at: string;
 };
 
 export type CreateTaskInput = {
@@ -227,6 +295,8 @@ export type TaskResultDto = {
   result_payload: JsonObject;
   artifacts: unknown[];
   artifact_references: ArtifactReferenceDto[];
+  delivery_manifest_id: string | null;
+  delivery_manifest: DeliveryManifestDto | null;
   quality_score: number | null;
   submitted_at: string;
 };
@@ -234,6 +304,7 @@ export type TaskResultDto = {
 export type SubmitResultInput = {
   result_payload: JsonObject;
   artifacts?: ArtifactReferenceInput[];
+  delivery_manifest?: DeliveryManifestInput;
 };
 
 export type ResolveTaskInput = {

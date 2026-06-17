@@ -66,8 +66,29 @@ export type TaskResult = {
   workerAgentId: string;
   resultPayload: JsonObject;
   artifacts: unknown[];
+  deliveryManifestId: string | null;
   qualityScore: number | null;
   submittedAt: string;
+};
+
+export type VerifierStatus = "not_configured" | "pending" | "passed" | "failed";
+export type PublicSafetyStatus = "public_safe" | "unsafe" | "private" | "inconsistent";
+
+export type DeliveryManifest = {
+  id: string;
+  taskResultId: string;
+  taskId: string;
+  manifestVersion: "omniclaw.delivery.v1";
+  publicSafe: boolean;
+  manifestPayload: JsonObject;
+  manifestHash: string;
+  verifierStatus: VerifierStatus;
+  verifierCommand: string | null;
+  verifierExpectedOutput: string | null;
+  verifierExitCode: number | null;
+  verifierStdoutHash: string | null;
+  publicSafetyStatus: PublicSafetyStatus;
+  createdAt: string;
 };
 
 export type ReputationEvent = {

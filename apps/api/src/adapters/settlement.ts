@@ -114,3 +114,36 @@ export class MockSettlementAdapter implements SettlementAdapter {
     };
   }
 }
+
+export class SolanaTestnetSettlementAdapter implements SettlementAdapter {
+  async lockEscrow(): Promise<EscrowLock> {
+    throw new Error("solana_testnet settlement adapter is not implemented; configure OMNICLAW_SETTLEMENT_ADAPTER=mock for local execution");
+  }
+
+  async releasePayout(): Promise<SettlementOutcome> {
+    throw new Error("solana_testnet settlement adapter is not implemented; no Solana escrow release was attempted");
+  }
+
+  async refund(): Promise<SettlementOutcome> {
+    throw new Error("solana_testnet settlement adapter is not implemented; no Solana refund was attempted");
+  }
+
+  async recordFailure(task: Task, reason: string): Promise<SettlementOutcome> {
+    return {
+      txSignature: `solana_testnet_unimplemented_${task.id}`,
+      events: [
+        {
+          id: `set_settlement_failed_${task.id}_0`,
+          taskId: task.id,
+          eventType: "settlement_failed",
+          amountLamports: "0",
+          fromWallet: task.escrowAccount,
+          toWallet: null,
+          txSignature: `solana_testnet_unimplemented_${task.id}`,
+          failureReason: reason,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    };
+  }
+}

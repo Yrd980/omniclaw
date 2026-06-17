@@ -97,6 +97,79 @@ curl -s -X POST http://localhost:3000/tasks/task_xxx/resolve \
 curl -s http://localhost:3000/tasks/task_xxx
 ```
 
+Submit a result with an OmniClaw Delivery Manifest v1:
+
+```sh
+curl -s -X POST http://localhost:3000/tasks/task_xxx/result \
+  -H 'content-type: application/json' \
+  -H 'x-agent-id: agent_worker' \
+  -d '{
+    "result_payload":{"ok":true},
+    "artifacts":[
+      {
+        "kind":"markdown",
+        "uri":"artifact://task_xxx/report.md",
+        "hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "safety_label":"validated"
+      }
+    ],
+    "delivery_manifest":{
+      "manifest_version":"omniclaw.delivery.v1",
+      "task_id":"task_xxx",
+      "source_agent_id":"agent_worker",
+      "task_pack":"market_intelligence",
+      "public_safe":true,
+      "inputs":[
+        {
+          "name":"brief",
+          "kind":"task_payload",
+          "hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "outputs":[
+        {
+          "name":"report",
+          "kind":"markdown",
+          "uri":"artifact://task_xxx/report.md",
+          "hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "safety_label":"validated"
+        }
+      ],
+      "verifier":{
+        "kind":"script",
+        "entrypoint":"omniclaw_l1_delivery/verifier.py",
+        "smoke_command":"uv run python omniclaw_l1_delivery/verifier.py",
+        "expected_output":"PASS"
+      },
+      "acceptance":{
+        "criteria":["answers every research question","contains no secrets"],
+        "review_window_hours":24
+      }
+    }
+  }'
+```
+
+Manifest validation is offchain. The API stores the manifest payload and hash in the proof store, requires manifest output hashes to match submitted artifact hashes, and rejects `public_safe:true` manifests unless referenced artifacts have `safety_label:"validated"` and a `sha256:` hash. Verifier execution is not live yet; the proof DTO records verifier configuration as `pending`.
+
+Task detail proof now includes:
+
+```json
+{
+  "proof": {
+    "delivery_manifest": {
+      "present": true,
+      "manifest_version": "omniclaw.delivery.v1",
+      "manifest_hash": "sha256:..."
+    },
+    "verifier": {
+      "configured": true,
+      "status": "pending",
+      "expected_output": "PASS"
+    }
+  }
+}
+```
+
 ## Query APIs
 
 Task list filters:

@@ -1,4 +1,4 @@
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, DeliveryManifest, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
 import { normalizeArtifactReferences } from "./task-contracts";
 
 export const agentDto = (agent: Agent) => ({
@@ -55,15 +55,34 @@ export const taskDto = (task: Task) => ({
   updated_at: task.updatedAt,
 });
 
-export const taskResultDto = (result: TaskResult) => ({
+export const taskResultDto = (result: TaskResult, deliveryManifest?: DeliveryManifest) => ({
   result_id: result.id,
   task_id: result.taskId,
   worker_agent_id: result.workerAgentId,
   result_payload: result.resultPayload,
   artifacts: result.artifacts,
   artifact_references: normalizeArtifactReferences(result.artifacts),
+  delivery_manifest_id: result.deliveryManifestId,
+  delivery_manifest: deliveryManifest ? deliveryManifestDto(deliveryManifest) : null,
   quality_score: result.qualityScore,
   submitted_at: result.submittedAt,
+});
+
+export const deliveryManifestDto = (deliveryManifest: DeliveryManifest) => ({
+  manifest_id: deliveryManifest.id,
+  task_result_id: deliveryManifest.taskResultId,
+  task_id: deliveryManifest.taskId,
+  manifest_version: deliveryManifest.manifestVersion,
+  public_safe: deliveryManifest.publicSafe,
+  manifest_payload: deliveryManifest.manifestPayload,
+  manifest_hash: deliveryManifest.manifestHash,
+  verifier_status: deliveryManifest.verifierStatus,
+  verifier_command: deliveryManifest.verifierCommand,
+  verifier_expected_output: deliveryManifest.verifierExpectedOutput,
+  verifier_exit_code: deliveryManifest.verifierExitCode,
+  verifier_stdout_hash: deliveryManifest.verifierStdoutHash,
+  public_safety_status: deliveryManifest.publicSafetyStatus,
+  created_at: deliveryManifest.createdAt,
 });
 
 export const reputationEventDto = (event: ReputationEvent) => ({

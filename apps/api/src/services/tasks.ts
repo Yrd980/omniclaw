@@ -1,6 +1,7 @@
 import type { SettlementAdapter } from "../adapters/settlement";
 import { runtimeAcceptedTaskPayload, type RuntimeAdapter } from "../adapters/runtime";
 import type { FeeConfig } from "../config";
+import { validateDeliveryManifest } from "../delivery-manifest";
 import { invariant } from "../errors";
 import type { DataStore } from "../store";
 import { taskContractDto, taskProofSummaryDto } from "../task-contracts";
@@ -134,7 +135,7 @@ export const submitResult = async (
   { store }: TaskServiceDeps,
   actor: Actor,
   taskId: string,
-  input: { result_payload?: JsonObject; artifacts?: unknown[] },
+  input: { result_payload?: JsonObject; artifacts?: unknown[]; delivery_manifest?: JsonObject },
 ): Promise<TaskResult> => {
   const task = await mustTask(store, taskId);
   requireWorker(actor, task);
@@ -145,16 +146,42 @@ export const submitResult = async (
   const skill = await store.getSkill(task.skillId);
   invariant(skill, 404, "NOT_FOUND", "task skill not found");
   validatePayloadAgainstSchema(input.result_payload, skill.outputSchema, "result_payload");
+  const artifacts = input.artifacts ?? [];
+  const deliveryManifestValidation = input.delivery_manifest === undefined
+    ? undefined
+    : validateDeliveryManifest(task, input.delivery_manifest, artifacts);
   const result: TaskResult = {
     id: store.nextId("result"),
     taskId,
     workerAgentId: task.workerAgentId,
     resultPayload: input.result_payload,
-    artifacts: input.artifacts ?? [],
+    artifacts,
+    deliveryManifestId: null,
     qualityScore: null,
     submittedAt: store.now(),
   };
+  if (deliveryManifestValidation) {
+    result.deliveryManifestId = store.nextId("manifest");
+  }
   await store.saveTaskResult(result);
+  if (deliveryManifestValidation && result.deliveryManifestId) {
+    await store.saveDeliveryManifest({
+      id: result.deliveryManifestId,
+      taskResultId: result.id,
+      taskId: task.id,
+      manifestVersion: deliveryManifestValidation.manifest.manifest_version,
+      publicSafe: deliveryManifestValidation.manifest.public_safe,
+      manifestPayload: deliveryManifestValidation.manifest,
+      manifestHash: deliveryManifestValidation.manifestHash,
+      verifierStatus: deliveryManifestValidation.verifierStatus,
+      verifierCommand: deliveryManifestValidation.manifest.verifier?.smoke_command ?? deliveryManifestValidation.manifest.verifier?.entrypoint ?? null,
+      verifierExpectedOutput: deliveryManifestValidation.manifest.verifier?.expected_output ?? null,
+      verifierExitCode: null,
+      verifierStdoutHash: null,
+      publicSafetyStatus: deliveryManifestValidation.publicSafetyStatus,
+      createdAt: result.submittedAt,
+    });
+  }
   applyTransition(task, "submitted");
   task.submittedAt = result.submittedAt;
   task.updatedAt = result.submittedAt;
@@ -255,6 +282,7 @@ export const getTaskGraph = async (store: DataStore, taskId: string) => {
         proof: taskProofSummaryDto(
           task,
           await store.getTaskResultForTask(task.id),
+          await store.getDeliveryManifestForTask(task.id),
           await store.listSettlementEventsByFilters({ taskId: task.id }),
         ),
       };
@@ -354,6 +382,7 @@ const submitRuntimeResult = async (
     workerAgentId: task.workerAgentId,
     resultPayload,
     artifacts: artifacts ?? [],
+    deliveryManifestId: null,
     qualityScore: null,
     submittedAt: store.now(),
   };

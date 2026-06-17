@@ -1,4 +1,4 @@
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, DeliveryManifest, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
 
 export type StoreRepository = {
   getAgent(id: string): Promise<Agent | undefined>;
@@ -14,6 +14,9 @@ export type StoreRepository = {
   listTasksByFilters(filters: TaskFilters): Promise<Task[]>;
   saveTaskResult(taskResult: TaskResult): Promise<void>;
   getTaskResultForTask(taskId: string): Promise<TaskResult | undefined>;
+  saveDeliveryManifest(deliveryManifest: DeliveryManifest): Promise<void>;
+  getDeliveryManifestForResult(taskResultId: string): Promise<DeliveryManifest | undefined>;
+  getDeliveryManifestForTask(taskId: string): Promise<DeliveryManifest | undefined>;
   saveReputationEvent(reputationEvent: ReputationEvent): Promise<void>;
   listReputationEvents(): Promise<ReputationEvent[]>;
   listReputationEventsByFilters(filters: EventFilters): Promise<ReputationEvent[]>;
@@ -43,6 +46,7 @@ export type DataStore = StoreRepository & {
   skills: Map<string, Skill>;
   tasks: Map<string, Task>;
   taskResults: Map<string, TaskResult>;
+  deliveryManifests: Map<string, DeliveryManifest>;
   reputationEvents: Map<string, ReputationEvent>;
   settlementEvents: Map<string, SettlementEvent>;
   nextId(prefix: string): string;
@@ -56,6 +60,7 @@ export const createMemoryStore = (): DataStore => {
     skills: new Map(),
     tasks: new Map(),
     taskResults: new Map(),
+    deliveryManifests: new Map(),
     reputationEvents: new Map(),
     settlementEvents: new Map(),
     nextId(prefix: string) {
@@ -104,6 +109,15 @@ export const createMemoryStore = (): DataStore => {
     },
     async getTaskResultForTask(taskId: string) {
       return [...this.taskResults.values()].find((taskResult) => taskResult.taskId === taskId);
+    },
+    async saveDeliveryManifest(deliveryManifest: DeliveryManifest) {
+      this.deliveryManifests.set(deliveryManifest.id, deliveryManifest);
+    },
+    async getDeliveryManifestForResult(taskResultId: string) {
+      return [...this.deliveryManifests.values()].find((deliveryManifest) => deliveryManifest.taskResultId === taskResultId);
+    },
+    async getDeliveryManifestForTask(taskId: string) {
+      return [...this.deliveryManifests.values()].find((deliveryManifest) => deliveryManifest.taskId === taskId);
     },
     async saveReputationEvent(reputationEvent: ReputationEvent) {
       this.reputationEvents.set(reputationEvent.id, reputationEvent);
