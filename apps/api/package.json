@@ -7,9 +7,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@omniclaw/db": "workspace:*",
     "@grpc/grpc-js": "^1.14.0",
     "@grpc/proto-loader": "^0.8.0",
+    "@noble/ed25519": "^3.1.0",
+    "@omniclaw/db": "workspace:*",
     "hono": "^4.10.6"
   }
 }

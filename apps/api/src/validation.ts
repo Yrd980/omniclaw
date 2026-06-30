@@ -195,3 +195,14 @@ const jsonType = (value: unknown): string => {
   }
   return typeof value;
 };
+
+export const requiredDisputeResolution = (body: JsonObject): "worker_favored" | "hirer_favored" | "split" | "dismissed" => {
+  const value = body["resolution"];
+  invariant(
+    typeof value === "string" && ["worker_favored", "hirer_favored", "split", "dismissed"].includes(value),
+    400,
+    "INVALID_BODY",
+    "resolution must be one of: worker_favored, hirer_favored, split, dismissed",
+  );
+  return value as "worker_favored" | "hirer_favored" | "split" | "dismissed";
+};

@@ -19,98 +19,93 @@ export interface SettlementAdapter {
   recordFailure(task: Task, reason: string): Promise<SettlementOutcome>;
 }
 
-export class MockSettlementAdapter implements SettlementAdapter {
-  private readonly lockedTaskIds = new Set<string>();
-  private readonly paidTaskIds = new Set<string>();
-  private readonly refundedTaskIds = new Set<string>();
-  private readonly failedTaskReasons = new Map<string, string>();
+export function createSettlementAdapter(config: SettlementConfig = DEFAULT_SETTLEMENT_CONFIG): SettlementAdapter {
+  const { SolanaSettlementAdapter } = require("@omniclaw/solana-client");
+  const solanaAdapter = new SolanaSettlementAdapter({
+    rpcUrl: config.solanaRpcUrl!,
+    programId: config.solanaProgramId!,
+    commitment: config.solanaCommitment ?? "confirmed",
+    platformFeeWallet: config.solanaPlatformFeeWallet!,
+    runtimeFeeWallet: config.solanaRuntimeFeeWallet!,
+    platformFeeBps: config.platformFeeBps,
+    runtimeFeeBps: config.runtimeFeeBps,
+  });
 
-  constructor(
-    private readonly config: SettlementConfig = DEFAULT_SETTLEMENT_CONFIG,
-    private readonly now: () => string = () => new Date().toISOString(),
-  ) {}
+  const now = () => new Date().toISOString();
 
-  async lockEscrow(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<EscrowLock> {
-    const txSignature = `${this.config.lockTxPrefix}_${task.id}`;
-    const escrowAccount = `${this.config.escrowAccountPrefix}_${task.id}`;
-    if (this.lockedTaskIds.has(task.id)) {
-      return { escrowAccount, txSignature, events: [] };
-    }
-    this.lockedTaskIds.add(task.id);
-    return {
-      escrowAccount,
-      txSignature,
-      events: [
-        this.event(task.id, "escrow_locked", task.paymentLamports, wallets.hirerWallet, escrowAccount, txSignature),
-      ],
-    };
-  }
+  const toSettlementEvents = (events: any[]): SettlementEvent[] =>
+    events.map((e) => ({
+      id: `set_${e.eventType}_${e.taskId}_${e.amountLamports}`,
+      taskId: e.taskId,
+      eventType: e.eventType,
+      amountLamports: e.amountLamports,
+      fromWallet: e.fromWallet,
+      toWallet: e.toWallet,
+      txSignature: e.txSignature,
+      failureReason: null,
+      confirmationStatus: "confirmed",
+      createdAt: now(),
+    }));
 
-  async releasePayout(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<SettlementOutcome> {
-    const txSignature = `${this.config.payoutTxPrefix}_${task.id}`;
-    if (this.paidTaskIds.has(task.id)) {
-      return { txSignature, events: [] };
-    }
-    this.paidTaskIds.add(task.id);
-    const events: SettlementEvent[] = [
-      this.event(task.id, "worker_paid", task.workerPayoutLamports, task.escrowAccount, wallets.workerWallet, txSignature),
-    ];
-    if (BigInt(task.platformFeeLamports) > 0n) {
-      events.push(this.event(task.id, "platform_fee_paid", task.platformFeeLamports, task.escrowAccount, this.config.protocolFeeWallet, txSignature));
-    }
-    if (BigInt(task.runtimeFeeLamports) > 0n) {
-      events.push(this.event(task.id, "runtime_fee_paid", task.runtimeFeeLamports, task.escrowAccount, this.config.runtimeFeeWallet, txSignature));
-    }
-    return { txSignature, events };
-  }
-
-  async refund(task: Task, wallets: { hirerWallet: string; workerWallet: string }): Promise<SettlementOutcome> {
-    const txSignature = `${this.config.refundTxPrefix}_${task.id}`;
-    if (this.refundedTaskIds.has(task.id)) {
-      return { txSignature, events: [] };
-    }
-    this.refundedTaskIds.add(task.id);
-    return {
-      txSignature,
-      events: [
-        this.event(task.id, "hirer_refunded", task.paymentLamports, task.escrowAccount, wallets.hirerWallet, txSignature),
-      ],
-    };
-  }
-
-  async recordFailure(task: Task, reason: string): Promise<SettlementOutcome> {
-    const txSignature = `mock_settlement_failed_${task.id}`;
-    if (this.failedTaskReasons.has(task.id)) {
-      return { txSignature, events: [] };
-    }
-    this.failedTaskReasons.set(task.id, reason);
-    return {
-      txSignature,
-      events: [
-        this.event(task.id, "settlement_failed", "0", task.escrowAccount, null, txSignature, reason),
-      ],
-    };
-  }
-
-  private event(
-    taskId: string,
-    eventType: SettlementEvent["eventType"],
-    amountLamports: string,
-    fromWallet: string | null,
-    toWallet: string | null,
-    txSignature: string,
-    failureReason: string | null = null,
-  ): SettlementEvent {
-    return {
-      id: `set_${eventType}_${taskId}_${amountLamports}`,
-      taskId,
-      eventType,
-      amountLamports,
-      fromWallet,
-      toWallet,
-      txSignature,
-      failureReason,
-      createdAt: this.now(),
-    };
-  }
+  return {
+    async lockEscrow(task, wallets) {
+      const result = await solanaAdapter.lockEscrow({
+        taskId: task.id,
+        paymentLamports: task.paymentLamports,
+        deadline: task.deadline,
+        hirerWallet: wallets.hirerWallet,
+        workerWallet: wallets.workerWallet,
+      });
+      return {
+        escrowAccount: result.escrowAccount!,
+        txSignature: result.txSignature,
+        events: toSettlementEvents(result.events),
+      };
+    },
+    async releasePayout(task, wallets) {
+      const result = await solanaAdapter.releasePayout({
+        taskId: task.id,
+        hirerWallet: wallets.hirerWallet,
+        workerWallet: wallets.workerWallet,
+        escrowAccount: task.escrowAccount,
+        workerPayoutLamports: task.workerPayoutLamports,
+        platformFeeLamports: task.platformFeeLamports,
+        runtimeFeeLamports: task.runtimeFeeLamports,
+      });
+      return {
+        txSignature: result.txSignature,
+        events: toSettlementEvents(result.events),
+      };
+    },
+    async refund(task, wallets) {
+      const result = await solanaAdapter.refund({
+        taskId: task.id,
+        hirerWallet: wallets.hirerWallet,
+        workerWallet: wallets.workerWallet,
+        escrowAccount: task.escrowAccount,
+      });
+      return {
+        txSignature: result.txSignature,
+        events: toSettlementEvents(result.events),
+      };
+    },
+    async recordFailure(task, reason) {
+      const txSignature = `settlement_failed_${task.id}_${Date.now()}`;
+      return {
+        txSignature,
+        events: [{
+          id: `set_settlement_failed_${task.id}_0`,
+          taskId: task.id,
+          eventType: "settlement_failed" as const,
+          amountLamports: "0",
+          fromWallet: task.escrowAccount,
+          toWallet: null,
+          txSignature,
+          failureReason: reason,
+          confirmationStatus: "confirmed",
+          createdAt: now(),
+        }],
+      };
+    },
+  };
 }

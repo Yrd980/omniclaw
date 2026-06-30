@@ -4,7 +4,7 @@ import type { FeeConfig } from "../config";
 import { invariant } from "../errors";
 import type { DataStore } from "../store";
 import { taskContractDto, taskProofSummaryDto } from "../task-contracts";
-import type { Actor, JsonObject, ReputationEvent, SettlementEvent, Task, TaskResult, TaskStatus } from "../types";
+import type { Actor, Agent, JsonObject, ReputationEvent, SettlementEvent, Task, TaskResult, TaskStatus } from "../types";
 import { validatePayloadAgainstSchema } from "../validation";
 import { requireHirerOrEvaluator, requireWorker } from "./authorization";
 import { calculateFees } from "./fees";
@@ -72,6 +72,9 @@ export const createTask = async ({ store, settlement, feeConfig }: TaskServiceDe
     acceptedAt: null,
     submittedAt: null,
     completedAt: null,
+    acceptanceSnapshotHash: null,
+    deliveryProtocolVersion: "omniclaw.delivery.v1",
+    settlementMode: "demo_mock",
     createdAt: now,
     updatedAt: now,
   };
@@ -94,6 +97,29 @@ export const acceptTask = async ({ store, runtime }: TaskServiceDeps, actor: Act
   task.acceptedAt = store.now();
   task.updatedAt = task.acceptedAt;
   await store.saveTask(task);
+
+  const shouldEnqueueAsync = task.taskPayload?.async_execution === true ||
+    (task.taskPayload?.estimated_duration_ms && (task.taskPayload.estimated_duration_ms as number) > 30000);
+
+  if (shouldEnqueueAsync) {
+    const executionItem = {
+      id: store.nextId("exec"),
+      taskId: task.id,
+      status: "queued" as const,
+      attempts: 0,
+      maxAttempts: 3,
+      lastError: null,
+      nextRetryAt: null,
+      startedAt: null,
+      completedAt: null,
+      timeoutMs: (task.taskPayload?.estimated_duration_ms as number) ?? 300000,
+      runtimeAdapter: null,
+      createdAt: store.now(),
+    };
+    await store.saveExecutionQueueItem(executionItem);
+    return task;
+  }
+
   let dispatch;
   try {
     dispatch = await runtime.dispatch(runtimeAcceptedTaskPayload(task));
@@ -374,6 +400,10 @@ const createReputationEvents = async (
   const acceptedAt = task.acceptedAt ? toTime(task.acceptedAt) : toTime(task.createdAt);
   const completedAt = toTime(store.now());
   const reputationDelta = success ? Math.max(1, Math.round((qualityScore ?? 80) / 20)) : -5;
+
+  const manifest = await store.getDeliveryManifestByTaskId(task.id);
+  const verificationStatus = manifest?.verifierStatus ?? null;
+
   const event: ReputationEvent = {
     id: store.nextId("rep"),
     agentId: task.workerAgentId,
@@ -384,10 +414,52 @@ const createReputationEvents = async (
     reviewScore,
     delegationSuccess: (await store.listTasks()).some((candidate) => candidate.parentTaskId === task.id && candidate.status === "completed"),
     reputationDelta,
+    verificationStatus,
     reason: success ? "task completed" : "task failed",
     createdAt: store.now(),
   };
   await store.saveReputationEvent(event);
+
+  await updateAgentAggregateMetrics(store, task.workerAgentId);
+};
+
+const updateAgentAggregateMetrics = async (store: DataStore, agentId: string) => {
+  const agent = await store.getAgent(agentId);
+  if (!agent) return;
+
+  const tasks = await store.listTasks();
+  const agentTasks = tasks.filter((t) => t.workerAgentId === agentId);
+  const completedTasks = agentTasks.filter((t) => t.status === "completed");
+  const failedTasks = agentTasks.filter((t) => t.status === "failed");
+  const disputes = await store.listDisputes({ taskId: undefined });
+
+  const agentDisputes = disputes.filter((d) =>
+    agentTasks.some((t) => t.id === d.taskId)
+  );
+
+  const totalTasks = agentTasks.length;
+  const totalCompleted = completedTasks.length;
+  const totalFailed = failedTasks.length;
+  const totalDisputes = agentDisputes.length;
+
+  const onTimeTasks = completedTasks.filter((t) => {
+    if (!t.submittedAt || !t.deadline) return true;
+    return new Date(t.submittedAt).getTime() <= new Date(t.deadline).getTime();
+  });
+
+  const updated: Agent = {
+    ...agent,
+    totalTasksCompleted: totalCompleted,
+    totalTasksFailed: totalFailed,
+    totalDisputes: totalDisputes,
+    verifiedCompletionRate: totalTasks > 0 ? totalCompleted / totalTasks : 0,
+    onTimeDeliveryRate: totalCompleted > 0 ? onTimeTasks.length / totalCompleted : 0,
+    disputeRate: totalTasks > 0 ? totalDisputes / totalTasks : 0,
+    refundRate: totalTasks > 0 ? failedTasks.length / totalTasks : 0,
+    updatedAt: store.now(),
+  };
+
+  await store.saveAgent(updated);
 };
 
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);

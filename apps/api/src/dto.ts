@@ -1,4 +1,4 @@
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, ArtifactCheck, DeliveryManifest, Dispute, ExecutionQueueItem, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
 import { normalizeArtifactReferences } from "./task-contracts";
 
 export const agentDto = (agent: Agent) => ({
@@ -14,6 +14,14 @@ export const agentDto = (agent: Agent) => ({
   delegation_success_rate: agent.delegationSuccessRate,
   historical_earnings_lamports: agent.historicalEarningsLamports,
   stake_amount: agent.stakeAmount,
+  verified_completion_rate: agent.verifiedCompletionRate,
+  on_time_delivery_rate: agent.onTimeDeliveryRate,
+  dispute_rate: agent.disputeRate,
+  unsafe_artifact_rate: agent.unsafeArtifactRate,
+  refund_rate: agent.refundRate,
+  total_tasks_completed: agent.totalTasksCompleted,
+  total_tasks_failed: agent.totalTasksFailed,
+  total_disputes: agent.totalDisputes,
   created_at: agent.createdAt,
   updated_at: agent.updatedAt,
 });
@@ -51,6 +59,9 @@ export const taskDto = (task: Task) => ({
   accepted_at: task.acceptedAt,
   submitted_at: task.submittedAt,
   completed_at: task.completedAt,
+  acceptance_snapshot_hash: task.acceptanceSnapshotHash,
+  delivery_protocol_version: task.deliveryProtocolVersion,
+  settlement_mode: task.settlementMode,
   created_at: task.createdAt,
   updated_at: task.updatedAt,
 });
@@ -76,6 +87,7 @@ export const reputationEventDto = (event: ReputationEvent) => ({
   review_score: event.reviewScore,
   delegation_success: event.delegationSuccess,
   reputation_delta: event.reputationDelta,
+  verification_status: event.verificationStatus,
   reason: event.reason,
   created_at: event.createdAt,
 });
@@ -89,5 +101,70 @@ export const settlementEventDto = (event: SettlementEvent) => ({
   to_wallet: event.toWallet,
   tx_signature: event.txSignature,
   failure_reason: event.failureReason,
+  confirmation_status: event.confirmationStatus,
   created_at: event.createdAt,
+});
+
+export const deliveryManifestDto = (manifest: DeliveryManifest) => ({
+  manifest_id: manifest.id,
+  task_result_id: manifest.taskResultId,
+  task_id: manifest.taskId,
+  manifest_version: manifest.manifestVersion,
+  public_safe: manifest.publicSafe,
+  manifest_payload: manifest.manifestPayload,
+  manifest_hash: manifest.manifestHash,
+  inputs: manifest.inputs,
+  outputs: manifest.outputs,
+  verifier_status: manifest.verifierStatus,
+  verifier_command: manifest.verifierCommand,
+  verifier_expected_output: manifest.verifierExpectedOutput,
+  verifier_exit_code: manifest.verifierExitCode,
+  verifier_stdout: manifest.verifierStdout,
+  verifier_stdout_hash: manifest.verifierStdoutHash,
+  verifier_ran_at: manifest.verifierRanAt,
+  verification_timeout_ms: manifest.verificationTimeoutMs,
+  created_at: manifest.createdAt,
+});
+
+export const artifactCheckDto = (check: ArtifactCheck) => ({
+  check_id: check.id,
+  task_result_id: check.taskResultId,
+  task_id: check.taskId,
+  artifact_uri: check.artifactUri,
+  artifact_hash: check.artifactHash,
+  safety_status: check.safetyStatus,
+  secret_scan_status: check.secretScanStatus,
+  secret_scan_findings: check.secretScanFindings,
+  displayable: check.displayable,
+  scanned_at: check.scannedAt,
+  created_at: check.createdAt,
+});
+
+export const disputeDto = (dispute: Dispute) => ({
+  dispute_id: dispute.id,
+  task_id: dispute.taskId,
+  opened_by: dispute.openedBy,
+  reason: dispute.reason,
+  status: dispute.status,
+  evaluator_agent_id: dispute.evaluatorAgentId,
+  resolution: dispute.resolution,
+  resolution_notes: dispute.resolutionNotes,
+  settlement_action: dispute.settlementAction,
+  opened_at: dispute.openedAt,
+  resolved_at: dispute.resolvedAt,
+});
+
+export const executionQueueItemDto = (item: ExecutionQueueItem) => ({
+  execution_id: item.id,
+  task_id: item.taskId,
+  status: item.status,
+  attempts: item.attempts,
+  max_attempts: item.maxAttempts,
+  last_error: item.lastError,
+  next_retry_at: item.nextRetryAt,
+  started_at: item.startedAt,
+  completed_at: item.completedAt,
+  timeout_ms: item.timeoutMs,
+  runtime_adapter: item.runtimeAdapter,
+  created_at: item.createdAt,
 });

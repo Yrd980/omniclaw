@@ -16,5 +16,47 @@ services:
       timeout: 3s
       retries: 20
 
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: omniclaw-api
+    ports:
+      - "3000:3000"
+    environment:
+      OMNICLAW_ENV: local
+      OMNICLAW_STORE: postgres
+      OMNICLAW_AUTH_MODE: headers
+      OMNICLAW_RATE_LIMIT_WINDOW_MS: "60000"
+      OMNICLAW_RATE_LIMIT_MAX_REQUESTS: "100"
+      DATABASE_URL: postgresql://omniclaw:omniclaw@postgres:5432/omniclaw
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: omniclaw-web
+    ports:
+      - "3001:3001"
+    environment:
+      NEXT_PUBLIC_OMNICLAW_API_URL: http://api:3000
+    depends_on:
+      - api
+
+  runtime:
+    build:
+      context: .
+      dockerfile: services/agent-runtime/Dockerfile
+    container_name: omniclaw-runtime
+    ports:
+      - "50051:50051"
+    environment:
+      OMNICLAW_RUNTIME_PROVIDER: echo
+    depends_on:
+      - api
+
 volumes:
   omniclaw_postgres_data:

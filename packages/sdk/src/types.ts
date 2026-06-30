@@ -19,6 +19,12 @@ export type SettlementEventType =
   | "platform_fee_paid"
   | "runtime_fee_paid"
   | "settlement_failed";
+export type ManifestVerifierStatus = "pending" | "passed" | "failed" | "timeout" | "error";
+export type DisputeStatus = "opened" | "under_review" | "resolved" | "escalated" | "dismissed";
+export type DisputeResolution = "worker_favored" | "hirer_favored" | "split" | "dismissed";
+export type ExecutionStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "timed_out";
+export type SafetyStatus = "validated" | "unsafe" | "private_runtime" | "unvalidated" | "flagged";
+export type SecretScanStatus = "pending" | "clean" | "findings" | "error";
 
 export type ActorHeaders = {
   wallet?: string;
@@ -31,7 +37,7 @@ export type HealthDto = {
   environment: "local" | "demo" | "testnet" | "production";
   store: "memory" | "postgres";
   runtime_adapter: "mock" | "grpc";
-  settlement_adapter: "mock";
+  settlement_adapter: "mock" | "solana_testnet";
   auth_mode: "headers" | "signed";
   production_ready: boolean;
   warnings: string[];
@@ -330,4 +336,195 @@ export type OmniClawApiErrorEnvelope = {
     details: unknown;
     path: string;
   };
+};
+
+export type ManifestInput = {
+  name: string;
+  kind: string;
+  uri?: string;
+  hash?: string;
+  checksum?: string;
+  safety_label?: string;
+};
+
+export type VerifierConfig = {
+  kind: "script" | "none" | "manual";
+  entrypoint?: string;
+  smoke_command?: string;
+  expected_output?: string;
+  timeout_ms?: number;
+};
+
+export type DeliveryManifestDto = {
+  manifest_id: string;
+  task_result_id: string;
+  task_id: string;
+  manifest_version: string;
+  public_safe: boolean;
+  manifest_payload: JsonObject;
+  manifest_hash: string | null;
+  inputs: ManifestInput[];
+  outputs: ManifestInput[];
+  verifier_status: ManifestVerifierStatus;
+  verifier_command: string | null;
+  verifier_expected_output: string | null;
+  verifier_exit_code: number | null;
+  verifier_stdout: string | null;
+  verifier_stdout_hash: string | null;
+  verifier_ran_at: string | null;
+  verification_timeout_ms: number;
+  created_at: string;
+};
+
+export type SubmitManifestInput = {
+  manifest_payload: JsonObject;
+  public_safe?: boolean;
+  inputs?: ManifestInput[];
+  outputs?: ManifestInput[];
+  verifier?: VerifierConfig;
+  verification_timeout_ms?: number;
+};
+
+export type ArtifactCheckDto = {
+  check_id: string;
+  task_result_id: string;
+  task_id: string;
+  artifact_uri: string;
+  artifact_hash: string | null;
+  safety_status: SafetyStatus;
+  secret_scan_status: SecretScanStatus;
+  secret_scan_findings: unknown[];
+  displayable: boolean;
+  scanned_at: string | null;
+  created_at: string;
+};
+
+export type DisputeDto = {
+  dispute_id: string;
+  task_id: string;
+  opened_by: string;
+  reason: string;
+  status: DisputeStatus;
+  evaluator_agent_id: string | null;
+  resolution: DisputeResolution | null;
+  resolution_notes: string | null;
+  settlement_action: string | null;
+  opened_at: string;
+  resolved_at: string | null;
+};
+
+export type OpenDisputeInput = {
+  reason: string;
+};
+
+export type ResolveDisputeInput = {
+  resolution: DisputeResolution;
+  resolution_notes?: string;
+  settlement_action?: "release_payout" | "refund" | "split";
+  quality_score?: number;
+  review_score?: number;
+};
+
+export type OperatorSettlementFailureDto = {
+  task_id: string;
+  event_id: string;
+  event_type: SettlementEventType;
+  amount_lamports: string;
+  failure_reason: string | null;
+  tx_signature: string;
+  created_at: string;
+};
+
+export type OperatorAgentSuspensionDto = {
+  agent_id: string;
+  name: string;
+  status: AgentStatus;
+  unsafe_artifact_rate: number;
+  dispute_rate: number;
+  total_disputes: number;
+  total_tasks_completed: number;
+};
+
+export type ExecutionQueueItemDto = {
+  execution_id: string;
+  task_id: string;
+  status: ExecutionStatus;
+  attempts: number;
+  max_attempts: number;
+  last_error: string | null;
+  next_retry_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  timeout_ms: number;
+  runtime_adapter: string | null;
+  created_at: string;
+};
+
+export type NonceDto = {
+  nonce: string;
+  message: string;
+  expires_at: string;
+};
+
+export type SiwsVerifyInput = {
+  message: string;
+  signature: string;
+  address: string;
+};
+
+export type SiwsVerifyDto = {
+  valid: boolean;
+  address: string;
+  agent_id: string | null;
+  role: "admin" | "evaluator" | null;
+};
+
+export type TaskProofFullDto = {
+  task_id: string;
+  environment: string;
+  delivery_manifest: DeliveryManifestDto | null;
+  escrow: {
+    locked: boolean;
+    escrow_account: string | null;
+    tx_signature: string | null;
+  };
+  artifacts: {
+    count: number;
+    validated_count: number;
+    unsafe_count: number;
+    private_runtime_count: number;
+    references: ArtifactReferenceDto[];
+    checks: ArtifactCheckDto[];
+  };
+  verifier: {
+    status: ManifestVerifierStatus | null;
+    command: string | null;
+    expected_output: string | null;
+    exit_code: number | null;
+    ran_at: string | null;
+  };
+  settlement: {
+    released: boolean;
+    refunded: boolean;
+    disputed: boolean;
+    tx_signature: string | null;
+  };
+  reputation: {
+    events: number;
+    worker_delta: number;
+    verification_status: string | null;
+  };
+  disputes: DisputeDto[];
+};
+
+export type TaskDetailFullDto = {
+  task: TaskDto;
+  task_contract: TaskContractDto;
+  proof: TaskProofFullDto;
+  delivery_manifest: DeliveryManifestDto | null;
+  result: TaskResultDto | null;
+  settlement_events: SettlementEventDto[];
+  reputation_events: ReputationEventDto[];
+  disputes: DisputeDto[];
+  artifact_checks: ArtifactCheckDto[];
 };

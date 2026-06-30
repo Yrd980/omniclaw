@@ -1,0 +1,14 @@
+C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\deps\serde-e469497c6c4b99a9.d: C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\build\serde-04bf8a31b32c0d41\out/private.rs
+
+C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\deps\libserde-e469497c6c4b99a9.rlib: C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\build\serde-04bf8a31b32c0d41\out/private.rs
+
+C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\deps\libserde-e469497c6c4b99a9.rmeta: C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\build\serde-04bf8a31b32c0d41\out/private.rs
+
+C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\Yrd98\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+C:\Users\Yrd98\project\omniclaw\programs\escrow\target\debug\build\serde-04bf8a31b32c0d41\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Yrd98\\project\\omniclaw\\programs\\escrow\\target\\debug\\build\\serde-04bf8a31b32c0d41\\out

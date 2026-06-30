@@ -1,4 +1,4 @@
-import type { Agent, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
+import type { Agent, ArtifactCheck, DeliveryManifest, Dispute, ExecutionQueueItem, ReputationEvent, SettlementEvent, Skill, Task, TaskResult } from "./types";
 
 export type StoreRepository = {
   getAgent(id: string): Promise<Agent | undefined>;
@@ -22,6 +22,23 @@ export type StoreRepository = {
   listSettlementEventsByFilters(filters: EventFilters): Promise<SettlementEvent[]>;
   listSettlementEventsForTask(taskId: string): Promise<SettlementEvent[]>;
   hasSettlementEvent(taskId: string, eventType: SettlementEvent["eventType"]): Promise<boolean>;
+  saveDeliveryManifest(manifest: DeliveryManifest): Promise<void>;
+  getDeliveryManifestByTaskResultId(taskResultId: string): Promise<DeliveryManifest | undefined>;
+  getDeliveryManifestByTaskId(taskId: string): Promise<DeliveryManifest | undefined>;
+  updateDeliveryManifest(manifest: DeliveryManifest): Promise<void>;
+  saveArtifactCheck(check: ArtifactCheck): Promise<void>;
+  listArtifactChecksByTaskId(taskId: string): Promise<ArtifactCheck[]>;
+  listArtifactChecksByTaskResultId(taskResultId: string): Promise<ArtifactCheck[]>;
+  updateArtifactCheck(check: ArtifactCheck): Promise<void>;
+  saveDispute(dispute: Dispute): Promise<void>;
+  getDispute(id: string): Promise<Dispute | undefined>;
+  listDisputes(filters: DisputeFilters): Promise<Dispute[]>;
+  updateDispute(dispute: Dispute): Promise<void>;
+  saveExecutionQueueItem(item: ExecutionQueueItem): Promise<void>;
+  getExecutionQueueItem(id: string): Promise<ExecutionQueueItem | undefined>;
+  getExecutionQueueItemByTaskId(taskId: string): Promise<ExecutionQueueItem | undefined>;
+  listExecutionQueueItems(filters: ExecutionQueueFilters): Promise<ExecutionQueueItem[]>;
+  updateExecutionQueueItem(item: ExecutionQueueItem): Promise<void>;
 };
 
 export type TaskFilters = {
@@ -38,6 +55,17 @@ export type EventFilters = {
   agentId?: string;
 };
 
+export type DisputeFilters = {
+  taskId?: string;
+  status?: string;
+  evaluatorAgentId?: string;
+};
+
+export type ExecutionQueueFilters = {
+  taskId?: string;
+  status?: string;
+};
+
 export type DataStore = StoreRepository & {
   agents: Map<string, Agent>;
   skills: Map<string, Skill>;
@@ -45,6 +73,10 @@ export type DataStore = StoreRepository & {
   taskResults: Map<string, TaskResult>;
   reputationEvents: Map<string, ReputationEvent>;
   settlementEvents: Map<string, SettlementEvent>;
+  deliveryManifests: Map<string, DeliveryManifest>;
+  artifactChecks: Map<string, ArtifactCheck>;
+  disputes: Map<string, Dispute>;
+  executionQueue: Map<string, ExecutionQueueItem>;
   nextId(prefix: string): string;
   now(): string;
 };
@@ -58,6 +90,10 @@ export const createMemoryStore = (): DataStore => {
     taskResults: new Map(),
     reputationEvents: new Map(),
     settlementEvents: new Map(),
+    deliveryManifests: new Map(),
+    artifactChecks: new Map(),
+    disputes: new Map(),
+    executionQueue: new Map(),
     nextId(prefix: string) {
       const next = (counters.get(prefix) ?? 0) + 1;
       counters.set(prefix, next);
@@ -131,6 +167,64 @@ export const createMemoryStore = (): DataStore => {
     },
     async hasSettlementEvent(taskId: string, eventType: SettlementEvent["eventType"]) {
       return [...this.settlementEvents.values()].some((event) => event.taskId === taskId && event.eventType === eventType);
+    },
+    async saveDeliveryManifest(manifest: DeliveryManifest) {
+      this.deliveryManifests.set(manifest.id, manifest);
+    },
+    async getDeliveryManifestByTaskResultId(taskResultId: string) {
+      return [...this.deliveryManifests.values()].find((m) => m.taskResultId === taskResultId);
+    },
+    async getDeliveryManifestByTaskId(taskId: string) {
+      return [...this.deliveryManifests.values()].find((m) => m.taskId === taskId);
+    },
+    async updateDeliveryManifest(manifest: DeliveryManifest) {
+      this.deliveryManifests.set(manifest.id, manifest);
+    },
+    async saveArtifactCheck(check: ArtifactCheck) {
+      this.artifactChecks.set(check.id, check);
+    },
+    async listArtifactChecksByTaskId(taskId: string) {
+      return [...this.artifactChecks.values()].filter((c) => c.taskId === taskId);
+    },
+    async listArtifactChecksByTaskResultId(taskResultId: string) {
+      return [...this.artifactChecks.values()].filter((c) => c.taskResultId === taskResultId);
+    },
+    async updateArtifactCheck(check: ArtifactCheck) {
+      this.artifactChecks.set(check.id, check);
+    },
+    async saveDispute(dispute: Dispute) {
+      this.disputes.set(dispute.id, dispute);
+    },
+    async getDispute(id: string) {
+      return this.disputes.get(id);
+    },
+    async listDisputes(filters: DisputeFilters) {
+      return [...this.disputes.values()].filter((d) =>
+        (filters.taskId === undefined || d.taskId === filters.taskId) &&
+        (filters.status === undefined || d.status === filters.status) &&
+        (filters.evaluatorAgentId === undefined || d.evaluatorAgentId === filters.evaluatorAgentId)
+      );
+    },
+    async updateDispute(dispute: Dispute) {
+      this.disputes.set(dispute.id, dispute);
+    },
+    async saveExecutionQueueItem(item: ExecutionQueueItem) {
+      this.executionQueue.set(item.id, item);
+    },
+    async getExecutionQueueItem(id: string) {
+      return this.executionQueue.get(id);
+    },
+    async getExecutionQueueItemByTaskId(taskId: string) {
+      return [...this.executionQueue.values()].find((i) => i.taskId === taskId);
+    },
+    async listExecutionQueueItems(filters: ExecutionQueueFilters) {
+      return [...this.executionQueue.values()].filter((i) =>
+        (filters.taskId === undefined || i.taskId === filters.taskId) &&
+        (filters.status === undefined || i.status === filters.status)
+      );
+    },
+    async updateExecutionQueueItem(item: ExecutionQueueItem) {
+      this.executionQueue.set(item.id, item);
     },
   };
 };

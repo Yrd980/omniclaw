@@ -3,7 +3,7 @@ import { ApiError } from "./errors";
 
 export type OmniClawEnvironment = "local" | "demo" | "testnet" | "production";
 export type StoreMode = "memory" | "postgres";
-export type SettlementAdapterMode = "mock";
+export type SettlementAdapterMode = "mock" | "solana_testnet" | "solana_devnet";
 export type AuthMode = "headers" | "signed";
 
 export type RuntimeConfig = {
@@ -67,6 +67,13 @@ export type SettlementConfig = {
   refundTxPrefix: string;
   protocolFeeWallet: string;
   runtimeFeeWallet: string;
+  solanaRpcUrl?: string;
+  solanaProgramId?: string;
+  solanaPlatformFeeWallet?: string;
+  solanaRuntimeFeeWallet?: string;
+  solanaCommitment?: "processed" | "confirmed" | "finalized";
+  platformFeeBps: number;
+  runtimeFeeBps: number;
 };
 
 export const DEFAULT_SETTLEMENT_CONFIG: SettlementConfig = {
@@ -76,6 +83,13 @@ export const DEFAULT_SETTLEMENT_CONFIG: SettlementConfig = {
   refundTxPrefix: process.env.SETTLEMENT_REFUND_TX_PREFIX ?? "mock_refund",
   protocolFeeWallet: process.env.SETTLEMENT_PROTOCOL_FEE_WALLET ?? "protocol_fee_wallet",
   runtimeFeeWallet: process.env.SETTLEMENT_RUNTIME_FEE_WALLET ?? "runtime_fee_wallet",
+  solanaRpcUrl: process.env.OMNICLAW_SOLANA_RPC_URL,
+  solanaProgramId: process.env.OMNICLAW_SOLANA_PROGRAM_ID,
+  solanaPlatformFeeWallet: process.env.OMNICLAW_SOLANA_PLATFORM_FEE_WALLET,
+  solanaRuntimeFeeWallet: process.env.OMNICLAW_SOLANA_RUNTIME_FEE_WALLET,
+  solanaCommitment: (process.env.OMNICLAW_SOLANA_COMMITMENT as "processed" | "confirmed" | "finalized") ?? "confirmed",
+  platformFeeBps: Number(process.env.OMNICLAW_PLATFORM_FEE_BPS ?? "500"),
+  runtimeFeeBps: Number(process.env.OMNICLAW_RUNTIME_FEE_BPS ?? "200"),
 };
 
 export const runtimeConfigFromEnv = (env: Partial<Record<RuntimeConfigEnvKey, string>> = processEnv()): RuntimeConfig => {
@@ -83,7 +97,7 @@ export const runtimeConfigFromEnv = (env: Partial<Record<RuntimeConfigEnvKey, st
     environment: parseEnvironment(env.OMNICLAW_ENV ?? "local"),
     storeMode: parseStoreMode(env.OMNICLAW_STORE ?? "memory"),
     runtimeAdapterMode: parseRuntimeAdapterMode(env.OMNICLAW_RUNTIME_ADAPTER ?? "mock"),
-    settlementAdapterMode: parseSettlementAdapterMode(env.OMNICLAW_SETTLEMENT_ADAPTER ?? "mock"),
+    settlementAdapterMode: parseSettlementAdapterMode(env.OMNICLAW_SETTLEMENT_ADAPTER ?? "solana_devnet"),
     authMode: parseAuthMode(env.OMNICLAW_AUTH_MODE ?? "headers"),
   };
   const warnings = productionWarnings(config);
@@ -122,10 +136,10 @@ const parseStoreMode = (value: string): StoreMode => {
 };
 
 const parseSettlementAdapterMode = (value: string): SettlementAdapterMode => {
-  if (value === "mock") {
+  if (value === "mock" || value === "solana_testnet" || value === "solana_devnet") {
     return value;
   }
-  throw new ApiError(500, "CONFIG_ERROR", `unsupported OMNICLAW_SETTLEMENT_ADAPTER: ${value}`);
+  throw new ApiError(500, "CONFIG_ERROR", `unsupported OMNICLAW_SETTLEMENT_ADAPTER: ${value}. Supported: "mock", "solana_testnet", "solana_devnet".`);
 };
 
 const parseAuthMode = (value: string): AuthMode => {
@@ -138,7 +152,7 @@ const parseAuthMode = (value: string): AuthMode => {
 const productionWarnings = (config: Omit<RuntimeConfig, "productionReady" | "warnings">): string[] => [
   config.storeMode === "memory" ? "memory store is local/demo only" : null,
   config.runtimeAdapterMode === "mock" ? "mock runtime is local/demo only" : null,
-  config.settlementAdapterMode === "mock" ? "mock settlement is local/demo only" : null,
+  config.settlementAdapterMode === "solana_devnet" ? "solana_devnet settlement is testnet only" : null,
   config.authMode === "headers" ? "header actor identity is local/demo only" : null,
 ].filter((warning): warning is string => Boolean(warning));
 

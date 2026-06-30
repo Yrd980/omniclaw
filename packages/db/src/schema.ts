@@ -19,6 +19,11 @@ const timestamps = {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 };
 
+export const manifestVerifierStatuses = ["pending", "passed", "failed", "timeout", "error"] as const;
+export const disputeStatuses = ["opened", "under_review", "resolved", "escalated", "dismissed"] as const;
+export const disputeResolutions = ["worker_favored", "hirer_favored", "split", "dismissed"] as const;
+export const executionStatuses = ["queued", "running", "completed", "failed", "cancelled", "timed_out"] as const;
+
 export const agentStatuses = ["active", "paused", "suspended"] as const;
 export const taskStatuses = [
   "created",
@@ -56,6 +61,14 @@ export const agents = pgTable(
     delegationSuccessRate: doublePrecision("delegation_success_rate").notNull().default(0),
     historicalEarningsLamports: text("historical_earnings_lamports").notNull().default("0"),
     stakeAmount: text("stake_amount").notNull().default("0"),
+    verifiedCompletionRate: doublePrecision("verified_completion_rate").notNull().default(0),
+    onTimeDeliveryRate: doublePrecision("on_time_delivery_rate").notNull().default(0),
+    disputeRate: doublePrecision("dispute_rate").notNull().default(0),
+    unsafeArtifactRate: doublePrecision("unsafe_artifact_rate").notNull().default(0),
+    refundRate: doublePrecision("refund_rate").notNull().default(0),
+    totalTasksCompleted: integer("total_tasks_completed").notNull().default(0),
+    totalTasksFailed: integer("total_tasks_failed").notNull().default(0),
+    totalDisputes: integer("total_disputes").notNull().default(0),
     profileEmbedding: vector("profile_embedding", { dimensions: embeddingDimensions }),
     ...timestamps,
   },
@@ -111,6 +124,9 @@ export const tasks = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    acceptanceSnapshotHash: text("acceptance_snapshot_hash"),
+    deliveryProtocolVersion: text("delivery_protocol_version").notNull().default("omniclaw.delivery.v1"),
+    settlementMode: text("settlement_mode").notNull().default("demo_mock"),
     ...timestamps,
   },
   (table) => ({
@@ -152,6 +168,7 @@ export const reputationEvents = pgTable(
     reviewScore: integer("review_score"),
     delegationSuccess: boolean("delegation_success").notNull().default(false),
     reputationDelta: integer("reputation_delta").notNull(),
+    verificationStatus: text("verification_status"),
     reason: text("reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -173,10 +190,107 @@ export const settlementEvents = pgTable(
     toWallet: text("to_wallet"),
     txSignature: text("tx_signature").notNull(),
     failureReason: text("failure_reason"),
+    confirmationStatus: text("confirmation_status").notNull().default("confirmed"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     taskIdIdx: index("settlement_events_task_id_idx").on(table.taskId),
     eventTypeIdx: index("settlement_events_event_type_idx").on(table.eventType),
+  }),
+);
+
+export const deliveryManifests = pgTable(
+  "delivery_manifests",
+  {
+    id: text("id").primaryKey(),
+    taskResultId: text("task_result_id").notNull().references(() => taskResults.id),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    manifestVersion: text("manifest_version").notNull().default("omniclaw.delivery.v1"),
+    publicSafe: boolean("public_safe").notNull().default(false),
+    manifestPayload: jsonb("manifest_payload").notNull(),
+    manifestHash: text("manifest_hash"),
+    inputs: jsonb("inputs").notNull().default([]),
+    outputs: jsonb("outputs").notNull().default([]),
+    verifierStatus: text("verifier_status").notNull().default("pending"),
+    verifierCommand: text("verifier_command"),
+    verifierExpectedOutput: text("verifier_expected_output"),
+    verifierExitCode: integer("verifier_exit_code"),
+    verifierStdout: text("verifier_stdout"),
+    verifierStdoutHash: text("verifier_stdout_hash"),
+    verifierRanAt: timestamp("verifier_ran_at", { withTimezone: true }),
+    verificationTimeoutMs: integer("verification_timeout_ms").notNull().default(30000),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    taskResultIdIdx: index("delivery_manifests_task_result_id_idx").on(table.taskResultId),
+    taskIdIdx: index("delivery_manifests_task_id_idx").on(table.taskId),
+    verifierStatusIdx: index("delivery_manifests_verifier_status_idx").on(table.verifierStatus),
+  }),
+);
+
+export const artifactChecks = pgTable(
+  "artifact_checks",
+  {
+    id: text("id").primaryKey(),
+    taskResultId: text("task_result_id").notNull().references(() => taskResults.id),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    artifactUri: text("artifact_uri").notNull(),
+    artifactHash: text("artifact_hash"),
+    safetyStatus: text("safety_status").notNull().default("unvalidated"),
+    secretScanStatus: text("secret_scan_status").notNull().default("pending"),
+    secretScanFindings: jsonb("secret_scan_findings").notNull().default([]),
+    displayable: boolean("displayable").notNull().default(false),
+    scannedAt: timestamp("scanned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    taskResultIdIdx: index("artifact_checks_task_result_id_idx").on(table.taskResultId),
+    taskIdIdx: index("artifact_checks_task_id_idx").on(table.taskId),
+    safetyStatusIdx: index("artifact_checks_safety_status_idx").on(table.safetyStatus),
+  }),
+);
+
+export const disputes = pgTable(
+  "disputes",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    openedBy: text("opened_by").notNull().references(() => agents.id),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("opened"),
+    evaluatorAgentId: text("evaluator_agent_id").references(() => agents.id),
+    resolution: text("resolution"),
+    resolutionNotes: text("resolution_notes"),
+    settlementAction: text("settlement_action"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => ({
+    taskIdIdx: index("disputes_task_id_idx").on(table.taskId),
+    openedByIdx: index("disputes_opened_by_idx").on(table.openedBy),
+    statusIdx: index("disputes_status_idx").on(table.status),
+  }),
+);
+
+export const executionQueue = pgTable(
+  "execution_queue",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    lastError: text("last_error"),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    timeoutMs: integer("timeout_ms").notNull().default(300000),
+    runtimeAdapter: text("runtime_adapter"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    taskIdIdx: index("execution_queue_task_id_idx").on(table.taskId),
+    statusIdx: index("execution_queue_status_idx").on(table.status),
+    nextRetryAtIdx: index("execution_queue_next_retry_at_idx").on(table.nextRetryAt),
   }),
 );

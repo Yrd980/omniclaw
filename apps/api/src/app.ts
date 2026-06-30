@@ -2,7 +2,7 @@ import { createDatabaseConnection } from "@omniclaw/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createRuntimeAdapterFromEnv } from "./adapters/runtime-factory";
-import { MockSettlementAdapter } from "./adapters/settlement";
+import { createSettlementAdapter } from "./adapters/settlement";
 import {
   assertProductionReadyConfig,
   DEFAULT_DISCOVERY_RANKING_CONFIG,
@@ -10,14 +10,22 @@ import {
   type DiscoveryRankingConfig,
   type RuntimeConfig,
 } from "./config";
-import { agentDto, reputationEventDto, settlementEventDto, skillDto, taskDto, taskResultDto } from "./dto";
-import { ApiError } from "./errors";
+import { agentDto, artifactCheckDto, deliveryManifestDto, disputeDto, executionQueueItemDto, reputationEventDto, settlementEventDto, skillDto, taskDto, taskResultDto } from "./dto";
+import { ApiError, invariant } from "./errors";
+import { rateLimit, type RateLimitConfig } from "./middleware/rate-limit";
 import { createPostgresStore } from "./postgres-store";
 import { createMemoryStore, type DataStore } from "./store";
 import { taskContractDto, taskProofDto } from "./task-contracts";
 import { registerAgent, registerSkill } from "./services/agents";
 import { actorFromHeaders } from "./services/authorization";
 import { discoverAgents } from "./services/discovery";
+import { submitManifest, getManifest } from "./services/manifest";
+import { runVerifier } from "./services/verifier";
+import { openDispute, resolveDispute, listDisputes, assignEvaluator } from "./services/disputes";
+import { getSettlementFailures, retrySettlementEvent, getAgentSuspensions, suspendAgent, reactivateAgent, getOperatorStats } from "./services/operator";
+import { getArtifactSafetySummary } from "./services/artifact-safety";
+import { getExecutionQueue, enqueueTask, cancelExecution, getStuckExecutions, cleanupTimedOutExecutions } from "./services/execution";
+import { generateNonce, verifySiws } from "./services/siws";
 import { acceptTask, createTask, expireTask, getTaskGraph, rejectTask, resolveTask, submitResult, type TaskServiceDeps } from "./services/tasks";
 import {
   optionalAgentStatus,
@@ -36,6 +44,7 @@ import {
   requireFutureTimestamp,
   requireLamports,
   requireString,
+  requiredDisputeResolution,
   requiredResolution,
 } from "./validation";
 
@@ -52,7 +61,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
   const store = env.store ?? createStoreFromEnv(runtimeConfig);
   const taskDeps = env.taskDeps ?? {
     store,
-    settlement: new MockSettlementAdapter(undefined, store.now),
+    settlement: createSettlementAdapter(),
     runtime: createRuntimeAdapterFromEnv(),
   };
   const discoveryRanking = env.discoveryRanking ?? DEFAULT_DISCOVERY_RANKING_CONFIG;
@@ -60,9 +69,15 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
 
   app.use("*", cors({
     origin: "*",
-    allowHeaders: ["content-type", "x-wallet", "x-agent-id", "x-role"],
+    allowHeaders: ["content-type", "x-wallet", "x-agent-id", "x-role", "x-siws-message", "x-siws-signature", "x-siws-address"],
     allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
   }));
+
+  const rateLimitConfig: RateLimitConfig = {
+    windowMs: Number(process.env.OMNICLAW_RATE_LIMIT_WINDOW_MS ?? "60000"),
+    maxRequests: Number(process.env.OMNICLAW_RATE_LIMIT_MAX_REQUESTS ?? "100"),
+  };
+  app.use("*", rateLimit(rateLimitConfig));
 
   app.onError((error, c) => {
     if (error instanceof ApiError) {
@@ -91,7 +106,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
 
   app.post("/agents", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
-    const agent = await registerAgent(store, actorFromHeaders(c.req.raw.headers), {
+    const agent = await registerAgent(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), {
       publisher_wallet: requireString(body, "publisher_wallet"),
       name: requireString(body, "name"),
       description: requireString(body, "description"),
@@ -126,7 +141,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
 
   app.post("/agents/:agentId/skills", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
-    const skill = await registerSkill(store, actorFromHeaders(c.req.raw.headers), c.req.param("agentId"), {
+    const skill = await registerSkill(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("agentId"), {
       name: requireString(body, "name"),
       description: requireString(body, "description"),
       input_schema: optionalJsonObject(body, "input_schema"),
@@ -145,7 +160,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
 
   app.post("/tasks", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
-    const task = await createTask(taskDeps, actorFromHeaders(c.req.raw.headers), {
+    const task = await createTask(taskDeps, await actorFromHeaders(c.req.raw.headers, runtimeConfig), {
       parent_task_id: optionalNullableString(body, "parent_task_id"),
       hirer_agent_id: requireString(body, "hirer_agent_id"),
       worker_agent_id: requireString(body, "worker_agent_id"),
@@ -189,13 +204,13 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     });
   });
 
-  app.post("/tasks/:taskId/accept", async (c) => c.json(taskDto(await acceptTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId")))));
-  app.post("/tasks/:taskId/reject", async (c) => c.json(taskDto(await rejectTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId")))));
-  app.post("/tasks/:taskId/expire", async (c) => c.json(taskDto(await expireTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId")))));
+  app.post("/tasks/:taskId/accept", async (c) => c.json(taskDto(await acceptTask(taskDeps, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId")))));
+  app.post("/tasks/:taskId/reject", async (c) => c.json(taskDto(await rejectTask(taskDeps, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId")))));
+  app.post("/tasks/:taskId/expire", async (c) => c.json(taskDto(await expireTask(taskDeps, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId")))));
 
   app.post("/tasks/:taskId/result", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
-    const result = await submitResult(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), {
+    const result = await submitResult(taskDeps, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId"), {
       result_payload: optionalJsonObject(body, "result_payload"),
       artifacts: optionalArray(body, "artifacts"),
     });
@@ -204,7 +219,7 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
 
   app.post("/tasks/:taskId/resolve", async (c) => {
     const body = await readJsonObjectBody(c.req.raw);
-    const task = await resolveTask(taskDeps, actorFromHeaders(c.req.raw.headers), c.req.param("taskId"), {
+    const task = await resolveTask(taskDeps, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId"), {
       resolution: requiredResolution(body),
       quality_score: optionalNumber(body, "quality_score"),
       review_score: optionalNumber(body, "review_score"),
@@ -233,7 +248,189 @@ export const createApp = (env: Partial<AppEnv> = {}) => {
     });
   });
 
-  return { app, store, taskDeps };
+  app.post("/tasks/:taskId/manifest", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const manifest = await submitManifest(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId"), {
+      manifest_payload: requireString(body, "manifest_payload") as unknown as Record<string, unknown>,
+      public_safe: optionalString(body, "public_safe") === "true",
+      inputs: body.inputs as any,
+      outputs: body.outputs as any,
+      verifier: body.verifier as any,
+      verification_timeout_ms: optionalNumber(body, "verification_timeout_ms"),
+    });
+    return c.json(deliveryManifestDto(manifest), 201);
+  });
+
+  app.get("/tasks/:taskId/manifest", async (c) => {
+    const manifest = await getManifest(store, c.req.param("taskId"));
+    return manifest ? c.json(deliveryManifestDto(manifest)) : c.json({ manifest: null });
+  });
+
+  app.post("/tasks/:taskId/verify", async (c) => {
+    const manifest = await getManifest(store, c.req.param("taskId"));
+    if (!manifest) {
+      return c.json({ error: { code: "NOT_FOUND", message: "no manifest found for task", details: null, path: c.req.url } }, 404);
+    }
+    const result = await runVerifier(store, manifest);
+    return c.json({ status: result.status, exit_code: result.exitCode, stdout: result.stdout });
+  });
+
+  app.get("/tasks/:taskId/artifact-checks", async (c) => {
+    const checks = await store.listArtifactChecksByTaskId(c.req.param("taskId"));
+    return c.json({ artifact_checks: checks.map(artifactCheckDto) });
+  });
+
+  app.get("/tasks/:taskId/proof", async (c) => {
+    const task = await store.getTask(c.req.param("taskId"));
+    if (!task) {
+      return c.json({ error: { code: "NOT_FOUND", message: "task not found", details: null, path: c.req.url } }, 404);
+    }
+    const result = await store.getTaskResultForTask(task.id);
+    const settlementEvents = await store.listSettlementEventsByFilters({ taskId: task.id });
+    const reputationEvents = await store.listReputationEventsByFilters({ taskId: task.id });
+    const manifest = await store.getDeliveryManifestByTaskId(task.id);
+    const disputes = await store.listDisputes({ taskId: task.id });
+    const artifactChecks = await store.listArtifactChecksByTaskId(task.id);
+    return c.json({
+      proof: taskProofDto(task, result, settlementEvents, reputationEvents),
+      delivery_manifest: manifest ? deliveryManifestDto(manifest) : null,
+      disputes: disputes.map(disputeDto),
+      artifact_checks: artifactChecks.map(artifactCheckDto),
+    });
+  });
+
+  app.post("/tasks/:taskId/disputes", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const dispute = await openDispute(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("taskId"), {
+      reason: requireString(body, "reason"),
+    });
+    return c.json(disputeDto(dispute), 201);
+  });
+
+  app.get("/tasks/:taskId/detail", async (c) => {
+    const task = await store.getTask(c.req.param("taskId"));
+    if (!task) {
+      return c.json({ error: { code: "NOT_FOUND", message: "task not found", details: null, path: c.req.url } }, 404);
+    }
+    const result = await store.getTaskResultForTask(task.id);
+    const settlementEvents = await store.listSettlementEventsByFilters({ taskId: task.id });
+    const reputationEvents = await store.listReputationEventsByFilters({ taskId: task.id });
+    const manifest = await store.getDeliveryManifestByTaskId(task.id);
+    const disputes = await store.listDisputes({ taskId: task.id });
+    const artifactChecks = await store.listArtifactChecksByTaskId(task.id);
+    return c.json({
+      task: taskDto(task),
+      task_contract: taskContractDto(task),
+      proof: taskProofDto(task, result, settlementEvents, reputationEvents),
+      delivery_manifest: manifest ? deliveryManifestDto(manifest) : null,
+      result: result ? taskResultDto(result) : null,
+      settlement_events: settlementEvents.map(settlementEventDto),
+      reputation_events: reputationEvents.map(reputationEventDto),
+      disputes: disputes.map(disputeDto),
+      artifact_checks: artifactChecks.map(artifactCheckDto),
+    });
+  });
+
+  app.get("/disputes", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const disputes = await listDisputes(store, {
+      task_id: queryString(params, "task_id"),
+      status: queryString(params, "status"),
+      evaluator_agent_id: queryString(params, "evaluator_agent_id"),
+    });
+    return c.json({ disputes: disputes.map(disputeDto) });
+  });
+
+  app.post("/disputes/:disputeId/resolve", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const dispute = await resolveDispute(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("disputeId"), {
+      resolution: requiredDisputeResolution(body),
+      resolution_notes: optionalString(body, "resolution_notes"),
+      settlement_action: optionalString(body, "settlement_action") as any,
+      quality_score: optionalNumber(body, "quality_score"),
+      review_score: optionalNumber(body, "review_score"),
+    });
+    return c.json(disputeDto(dispute));
+  });
+
+  app.post("/disputes/:disputeId/assign", async (c) => {
+    const dispute = await assignEvaluator(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("disputeId"));
+    return c.json(disputeDto(dispute));
+  });
+
+  app.get("/operator/settlement-failures", async (c) => {
+    const failures = await getSettlementFailures(store);
+    return c.json({ failures });
+  });
+
+  app.post("/operator/settlement-events/:eventId/retry", async (c) => {
+    const result = await retrySettlementEvent(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("eventId"));
+    return c.json(result);
+  });
+
+  app.get("/operator/agent-suspensions", async (c) => {
+    const agents = await getAgentSuspensions(store);
+    return c.json({ agents });
+  });
+
+  app.post("/operator/agents/:agentId/suspend", async (c) => {
+    const agent = await suspendAgent(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("agentId"));
+    return c.json(agentDto(agent));
+  });
+
+  app.post("/operator/agents/:agentId/reactivate", async (c) => {
+    const agent = await reactivateAgent(store, await actorFromHeaders(c.req.raw.headers, runtimeConfig), c.req.param("agentId"));
+    return c.json(agentDto(agent));
+  });
+
+  app.get("/operator/stats", async (c) => {
+    const stats = await getOperatorStats(store);
+    return c.json(stats);
+  });
+
+  app.get("/operator/execution-queue", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const queue = await getExecutionQueue(store, {
+      task_id: queryString(params, "task_id"),
+      status: queryString(params, "status"),
+    });
+    return c.json({ queue: queue.map(executionQueueItemDto) });
+  });
+
+  app.get("/operator/stuck-executions", async (c) => {
+    const stuck = await getStuckExecutions(store);
+    return c.json({ stuck: stuck.map(executionQueueItemDto) });
+  });
+
+  app.post("/operator/cleanup-timed-out", async (c) => {
+    const cleaned = await cleanupTimedOutExecutions(store);
+    return c.json({ cleaned });
+  });
+
+  app.get("/operator/artifact-safety/:taskId", async (c) => {
+    const summary = await getArtifactSafetySummary(store, c.req.param("taskId"));
+    return c.json(summary);
+  });
+
+  app.get("/auth/nonce", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const address = queryString(params, "address");
+    invariant(address, 400, "INVALID_BODY", "address is required");
+    const nonceData = generateNonce(address);
+    return c.json(nonceData);
+  });
+
+  app.post("/auth/verify", async (c) => {
+    const body = await readJsonObjectBody(c.req.raw);
+    const result = await verifySiws(store, {
+      message: requireString(body, "message"),
+      signature: requireString(body, "signature"),
+      address: requireString(body, "address"),
+    });
+    return c.json(result);
+  });
+
+  return { app, store, taskDeps, runtimeConfig };
 };
 
 const requiredNumber = (body: Record<string, unknown>, field: string): number => {

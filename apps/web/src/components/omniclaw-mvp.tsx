@@ -16,19 +16,21 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
-  Rocket,
   Search,
   ShieldCheck,
   Sparkles,
   Timer,
   Users,
+  Wallet,
   Zap,
 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { createSiwsMessage, generateNonce } from "@/lib/siws";
 import {
   createOmniClawClient,
   OmniClawApiError,
@@ -127,6 +129,23 @@ const STATUS_META: Record<TaskStatus | AgentStatus, { label: string; tone: Statu
 };
 
 const LIFECYCLE: TaskStatus[] = ["created", "escrow_locked", "accepted", "in_progress", "submitted", "completed"];
+const PRODUCT_SIGNALS = [
+  {
+    label: "agent spend controls",
+    value: "budgeted delegation",
+    detail: "Child tasks can only consume an explicit budget and each payout is visible before review.",
+  },
+  {
+    label: "trust primitives",
+    value: "escrow + artifacts",
+    detail: "Buyers see escrow, artifact hashes, safety labels, and private-runtime boundaries in one contract view.",
+  },
+  {
+    label: "failure path",
+    value: "refund or dispute",
+    detail: "Rejected, failed, and expired work has a product-level path instead of disappearing into agent logs.",
+  },
+];
 const CRYPTO_LAUNCH_TASK_PACK: TaskPackScenario = {
   slug: "crypto_launch",
   label: "Crypto Launch / Market Intelligence",
@@ -204,8 +223,14 @@ const DEMO_SCENARIOS: DemoScenario[] = [
 ];
 
 export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
+  const { connection } = useConnection();
+  const { publicKey, signMessage, connected, connect, disconnect } = useWallet();
   const [apiUrl, setApiUrl] = useState(API_URL);
-  const client = useMemo(() => injectedClient ?? createOmniClawClient({ baseUrl: apiUrl }), [apiUrl, injectedClient]);
+  const [siwsHeaders, setSiwsHeaders] = useState<Record<string, string>>({});
+  const client = useMemo(() => {
+    const baseClient = injectedClient ?? createOmniClawClient({ baseUrl: apiUrl });
+    return Object.keys(siwsHeaders).length > 0 ? baseClient.withSiwsHeaders(siwsHeaders) : baseClient;
+  }, [apiUrl, injectedClient, siwsHeaders]);
   const [actor, setActor] = useState<ActorHeaders>({ wallet: "wallet_operator", agentId: "", role: undefined });
   const [filters, setFilters] = useState<DiscoverAgentsFilters>({ capability: "market_research", status: "active" });
   const [taskFilters, setTaskFilters] = useState<ListTasksFilters>({});
@@ -219,6 +244,34 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [issue, setIssue] = useState<ApiIssue | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const signSiws = useCallback(async () => {
+    if (!publicKey || !signMessage) return;
+    const message = createSiwsMessage({
+      domain: window.location.host,
+      address: publicKey.toBase58(),
+      statement: "Sign in to OmniClaw",
+      uri: window.location.origin,
+      chainId: "mainnet",
+      nonce: generateNonce(),
+    });
+    const encodedMessage = new TextEncoder().encode(message);
+    const signature = await signMessage(encodedMessage);
+    setSiwsHeaders({
+      "x-siws-message": message,
+      "x-siws-signature": Buffer.from(signature).toString("base64"),
+      "x-siws-address": publicKey.toBase58(),
+    });
+    setActor((prev) => ({ ...prev, wallet: publicKey.toBase58() }));
+  }, [publicKey, signMessage]);
+
+  useEffect(() => {
+    if (connected && publicKey) {
+      void signSiws();
+    } else {
+      setSiwsHeaders({});
+    }
+  }, [connected, publicKey, signSiws]);
 
   const activeActor = useMemo(() => compactActor(actor), [actor]);
 
@@ -375,10 +428,10 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
   return (
     <main className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <header className="border-b border-[var(--border)] bg-[var(--panel)]">
-        <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)_auto] xl:items-center">
+        <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-3 xl:grid-cols-[minmax(280px,0.78fr)_minmax(0,1.6fr)_auto] xl:items-center">
           <div>
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw research workbench</div>
-            <h1 className="mt-1 text-xl font-semibold">Escrow-backed Web3 agent research</h1>
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]"><Sparkles size={14} /> OmniClaw</div>
+            <h1 className="mt-1 text-xl font-semibold text-balance">Agent labor market control plane</h1>
             <span className="sr-only">Autonomous agent hiring graph</span>
           </div>
           <div className="grid gap-2 md:grid-cols-4">
@@ -402,6 +455,13 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             </Field>
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            {connected && publicKey ? (
+              <Button onClick={disconnect} variant="secondary" icon={<Wallet size={16} />}>
+                {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+              </Button>
+            ) : (
+              <Button onClick={connect} icon={<Wallet size={16} />}>Connect Wallet</Button>
+            )}
             <Select aria-label="actor role" value={actor.role ?? ""} onChange={(event) => setActor({ ...actor, role: event.target.value ? event.target.value as ActorHeaders["role"] : undefined })} className="w-[120px]">
               {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role || "observer"}</option>)}
             </Select>
@@ -413,15 +473,15 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
       <div className="mx-auto grid max-w-[1680px] gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_400px]">
         <section className="min-h-[calc(100vh-112px)] overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--canvas)]">
           <div className="border-b border-[var(--border)] bg-[var(--demo-band)] px-4 py-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)_auto] 2xl:items-end">
               <div>
-                <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--background)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                  <Coins size={13} /> Demo / Mock Settlement
+                <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  <Coins size={13} /> demo_mock settlement
                 </div>
-                <h2 className="text-lg font-semibold">Crypto Launch / Market Intelligence</h2>
-                <p className="mt-1 max-w-[82ch] text-sm text-[var(--muted)]">
-                  Create a funded research task, assemble a coordinator and specialist agents, inspect proof and lineage, then approve or dispute settlement.
-                  SDK/API state is real; runtime execution and settlement are mocked unless configured otherwise.
+                <h2 className="text-2xl font-semibold leading-tight text-balance">Crypto Launch Intelligence task pack</h2>
+                <p className="mt-2 max-w-[78ch] text-sm leading-6 text-[var(--muted)]">
+                  Fund a coordinator, let it hire specialist agents, inspect artifact proof, then approve payout or send the work to dispute.
+                  SDK/API state is live; external execution and chain settlement stay explicitly mocked.
                 </p>
                 <div className="mt-3 grid gap-2 text-xs text-[var(--foreground)] md:grid-cols-3">
                   <TaskPackFact icon={<ShieldCheck size={14} />} label="escrow" value="locked on create" />
@@ -429,22 +489,25 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
                   <TaskPackFact icon={<Timer size={14} />} label="review" value={`${CRYPTO_LAUNCH_TASK_PACK.reviewWindowHours}h window`} />
                 </div>
               </div>
-              <div className="grid gap-2 lg:justify-items-end">
+              <div className="grid gap-2 md:grid-cols-3 2xl:grid-cols-1">
+                {PRODUCT_SIGNALS.map((signal) => <ProductSignal key={signal.label} {...signal} />)}
+              </div>
+              <div className="grid gap-2 2xl:justify-items-end">
                 <Button
                   onClick={() => void runDemoScenario(CRYPTO_LAUNCH_TASK_PACK)}
                   busy={busy === `demo:${CRYPTO_LAUNCH_TASK_PACK.slug}`}
-                  icon={<Rocket size={16} style={{ color: toneColor(CRYPTO_LAUNCH_TASK_PACK.accent) }} />}
+                  icon={<BadgeDollarSign size={16} style={{ color: toneColor(CRYPTO_LAUNCH_TASK_PACK.accent) }} />}
                 >
-                  Run task pack
+                  Create funded task
                 </Button>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
+                <div className="flex flex-wrap gap-2 2xl:justify-end">
                 {DEMO_SCENARIOS.map((scenario) => (
                   <Button
                     key={scenario.slug}
                     variant="secondary"
                     onClick={() => void runDemoScenario(scenario)}
                     busy={busy === `demo:${scenario.slug}`}
-                    icon={<Rocket size={16} style={{ color: toneColor(scenario.accent) }} />}
+                    icon={<GitBranch size={16} style={{ color: toneColor(scenario.accent) }} />}
                   >
                     {scenario.label}
                   </Button>
@@ -490,16 +553,21 @@ export function OmniClawMvp({ client: injectedClient }: OmniClawMvpProps) {
             <aside className="border-t border-[var(--border)] bg-[var(--panel)] p-4 xl:border-l xl:border-t-0">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">market signals</div>
-                  <h2 className="mt-1 text-base font-semibold">Agent capability field</h2>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">buyer risk signals</div>
+                  <h2 className="mt-1 text-base font-semibold">Trust posture</h2>
                 </div>
                 <Activity size={18} className={paused ? "text-[var(--muted)]" : "animate-pulse text-[var(--accent)]"} />
               </div>
               <div className="grid gap-3">
                 <MarketBar label="avg reputation" value={market.avgReputation} max={100} tone="success" />
                 <MarketBar label="avg quality" value={market.avgQuality} max={100} tone="info" />
-                <MarketBar label="success rate" value={market.avgSuccess * 100} max={100} tone="success" />
+                <MarketBar label="success rate" value={market.avgSuccessRate} max={100} tone="success" />
+                <MarketBar label="delegation reliability" value={market.avgDelegationRate} max={100} tone="info" />
                 <MarketBar label="latency pressure" value={market.latencyPressure} max={100} tone="warning" />
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <RiskCounter label="open escrow" value={String(market.openEscrowTasks)} tone={market.openEscrowTasks > 0 ? "info" : "neutral"} />
+                <RiskCounter label="disputes" value={String(market.disputedTasks)} tone={market.disputedTasks > 0 ? "warning" : "success"} />
               </div>
               <div className="mt-5 border-t border-[var(--border)] pt-4">
                 <div className="mb-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">lifecycle rail</div>
@@ -553,6 +621,16 @@ function Signal({ icon, label, value }: { icon: React.ReactNode; label: string; 
   );
 }
 
+function ProductSignal({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{label}</div>
+      <div className="mt-1 font-semibold">{value}</div>
+      <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{detail}</p>
+    </div>
+  );
+}
+
 function TaskPackFact({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="grid grid-cols-[18px_1fr] items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2">
@@ -600,6 +678,15 @@ function MarketBar({ label, value, max, tone }: { label: string; value: number; 
   );
 }
 
+function RiskCounter({ label, value, tone }: { label: string; value: string; tone: StatusTone }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="text-xs font-medium text-[var(--muted)]">{label}</div>
+      <div className="mt-1 font-mono text-lg font-semibold" style={{ color: toneColor(tone) }}>{value}</div>
+    </div>
+  );
+}
+
 function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDto | null; detail: TaskDetailDto | null; events: EventItem[]; tasks: TaskDto[]; onSelectTask: (taskId: string) => void }) {
   const contract = detail?.task_contract ?? null;
   const proof = detail?.proof ?? null;
@@ -608,6 +695,18 @@ function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDt
     : [];
   return (
     <>
+      <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+          <h2 className="text-base font-semibold">Product thesis</h2>
+          <Sparkles size={16} className="text-[var(--muted)]" />
+        </div>
+        <div className="grid gap-3 p-4 text-sm">
+          <ThesisRow label="what buyers ask first" value="What can this agent spend, expose, and prove?" />
+          <ThesisRow label="what makes delegation credible" value="Parent and child tasks need visible budgets, artifacts, and payout states." />
+          <ThesisRow label="what recent failures teach" value="Agents need hard limits, audit trails, and refund paths before autonomy is trusted." />
+        </div>
+      </section>
+
       <section className="rounded-lg border border-[var(--border)] bg-[var(--panel)]">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
           <div>
@@ -625,8 +724,12 @@ function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDt
               </div>
               <div className="text-sm text-[var(--muted)]">{projectLine(contract?.project_context)}</div>
             </div>
-            <Metric label="payment_lamports" value={formatLamports(task.payment_lamports)} />
-            <Metric label="delegation_budget_lamports" value={contract?.delegation_budget_lamports ? formatLamports(contract.delegation_budget_lamports) : "not allocated"} />
+            <div className="grid grid-cols-2 gap-2">
+              <Metric label="buyer funds" value={formatLamports(task.payment_lamports)} />
+              <Metric label="worker payout" value={formatLamports(task.worker_payout_lamports)} />
+              <Metric label="delegation budget" value={contract?.delegation_budget_lamports ? formatLamports(contract.delegation_budget_lamports) : "not allocated"} />
+              <Metric label="review window" value={`${contract?.review_window_hours ?? 24}h`} />
+            </div>
             <Metric label="deadline" value={formatDate(task.deadline)} />
             <Checklist title="acceptance criteria" items={contract?.acceptance_criteria ?? []} />
             <Checklist title="permission scope" items={contract?.permission_scope ?? []} />
@@ -643,14 +746,12 @@ function Inspector({ task, detail, events, tasks, onSelectTask }: { task: TaskDt
         </div>
         {task && proof ? (
           <div className="grid gap-3 p-4">
-            <ProofRow label="mode" value={proof.environment} tone={proof.environment === "production" ? "success" : "warning"} />
-            <ProofRow label="escrow" value={proof.escrow.locked ? "locked" : "not locked"} tone={proof.escrow.locked ? "success" : "danger"} />
-            <Metric label="escrow_account" value={proof.escrow.escrow_account ?? "none"} />
-            <Metric label="escrow_tx_signature" value={proof.escrow.tx_signature ?? "none"} />
-            <ProofRow label="settlement" value={settlementLabel(proof)} tone={proof.settlement.released ? "success" : proof.settlement.refunded || proof.settlement.disputed ? "warning" : "info"} />
-            <ProofRow label="artifacts" value={`${proof.artifacts.validated_count}/${proof.artifacts.count} validated`} tone={proof.artifacts.count === proof.artifacts.validated_count && proof.artifacts.count > 0 ? "success" : "warning"} />
-            <ProofRow label="unsafe" value={`${proof.artifacts.unsafe_count} flagged`} tone={proof.artifacts.unsafe_count > 0 ? "danger" : "success"} />
-            <ProofRow label="private runtime" value={`${proof.artifacts.private_runtime_count} hidden`} tone={proof.artifacts.private_runtime_count > 0 ? "warning" : "success"} />
+            <ProofSummary proof={proof} />
+            <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+              <div className="text-xs font-medium text-[var(--muted)]">escrow record</div>
+              <Metric label="account" value={proof.escrow.escrow_account ?? "none"} />
+              <Metric label="tx signature" value={proof.escrow.tx_signature ?? "none"} />
+            </div>
             <ArtifactProofList references={proof.artifacts.references} />
           </div>
         ) : (
@@ -744,6 +845,15 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function ThesisRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="mb-1 text-xs font-medium text-[var(--muted)]">{label}</div>
+      <div className="leading-5">{value}</div>
+    </div>
+  );
+}
+
 function Checklist({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="grid gap-2 rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
@@ -758,10 +868,23 @@ function Checklist({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+function ProofSummary({ proof }: { proof: TaskDetailDto["proof"] }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <ProofRow label="mode" value={proof.environment} tone={proof.environment === "production" ? "success" : "warning"} />
+      <ProofRow label="escrow" value={proof.escrow.locked ? "locked" : "not locked"} tone={proof.escrow.locked ? "success" : "danger"} />
+      <ProofRow label="settlement" value={settlementLabel(proof)} tone={proof.settlement.released ? "success" : proof.settlement.refunded || proof.settlement.disputed ? "warning" : "info"} />
+      <ProofRow label="reputation" value={`${proof.reputation.worker_delta > 0 ? "+" : ""}${proof.reputation.worker_delta} delta`} tone={proof.reputation.worker_delta >= 0 ? "success" : "danger"} />
+      <ProofRow label="artifacts" value={`${proof.artifacts.validated_count}/${proof.artifacts.count} validated`} tone={proof.artifacts.count === proof.artifacts.validated_count && proof.artifacts.count > 0 ? "success" : "warning"} />
+      <ProofRow label="unsafe" value={`${proof.artifacts.unsafe_count} flagged`} tone={proof.artifacts.unsafe_count > 0 ? "danger" : "success"} />
+    </div>
+  );
+}
+
 function ProofRow({ label, value, tone }: { label: string; value: string; tone: StatusTone }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
-      <span className="text-[var(--muted)]">{label}</span>
+    <div className="grid gap-1 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm">
+      <span className="text-xs text-[var(--muted)]">{label}</span>
       <span className="font-semibold" style={{ color: toneColor(tone) }}>{value}</span>
     </div>
   );
@@ -976,8 +1099,12 @@ function AgentNode({ agent }: { agent: AgentDto }) {
       </div>
       <div className="grid grid-cols-3 gap-2 text-xs">
         <NodeStat label="rep" value={agent.reputation_score} />
-        <NodeStat label="lat" value={`${agent.avg_latency_ms}ms`} />
+        <NodeStat label="win" value={`${normalizeRate(agent.success_rate).toFixed(0)}%`} />
+        <NodeStat label="del" value={`${normalizeRate(agent.delegation_success_rate).toFixed(0)}%`} />
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
         <NodeStat label="stake" value={compactLamports(agent.stake_amount)} />
+        <NodeStat label="lat" value={`${agent.avg_latency_ms}ms`} />
       </div>
     </div>
   );
@@ -1070,10 +1197,13 @@ function buildMarketSignals(results: DiscoveryResultDto[], tasks: TaskDto[]) {
   const agents = uniqueAgents(results);
   const avgReputation = average(agents.map((agent) => agent.reputation_score));
   const avgQuality = average(agents.map((agent) => agent.quality_score));
-  const avgSuccess = average(agents.map((agent) => agent.success_rate));
+  const avgSuccessRate = average(agents.map((agent) => normalizeRate(agent.success_rate)));
+  const avgDelegationRate = average(agents.map((agent) => normalizeRate(agent.delegation_success_rate)));
   const latencyPressure = clamp(average(results.map((result) => result.skill.estimated_latency_ms)) / 150, 0, 100);
   const totalPayment = tasks.reduce((sum, task) => sum + Number(task.payment_lamports), 0).toFixed(0);
-  return { avgReputation, avgQuality, avgSuccess, latencyPressure, totalPayment };
+  const openEscrowTasks = tasks.filter((task) => Boolean(task.escrow_account) && !task.settlement_tx_signature && task.status !== "cancelled").length;
+  const disputedTasks = tasks.filter((task) => task.status === "disputed" || task.status === "failed" || task.status === "expired").length;
+  return { avgReputation, avgQuality, avgSuccessRate, avgDelegationRate, latencyPressure, totalPayment, openEscrowTasks, disputedTasks };
 }
 
 function lifecycleIndex(status: TaskStatus) {
@@ -1301,6 +1431,10 @@ function average(values: number[]) {
     return 0;
   }
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function normalizeRate(value: number) {
+  return value <= 1 ? value * 100 : value;
 }
 
 function clamp(value: number, min: number, max: number) {
